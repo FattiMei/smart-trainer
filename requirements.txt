@@ -1,0 +1,6 @@
+matplotlib==3.10.0
+numpy==2.2.1
+paho_mqtt==2.1.0
+pyftpdlib==2.0.0
+pyqtgraph==0.13.7
+sounddevice==0.5.1

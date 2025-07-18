@@ -1,0 +1,16 @@
+{   
+    "broker_address": "192.168.1.204",
+    "activities": [
+        "Absence",
+        "Breathing",
+        "Apnea",
+	"signal-to-noise",
+	"low (100)",
+	"medium (150)",
+	"high (200)",
+	"high (300)",
+	"rpm-ladder",
+	"recovery"
+    ],
+    "fps": 20
+}
