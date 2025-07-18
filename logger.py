@@ -9,7 +9,13 @@ import serial
 from scipy import signal, constants
 
 from serial.tools import list_ports
-import sounddevice as sd
+
+# This module requires the "PortAudio" system library.
+# The only function of this module is to play a sound at the beginning
+# and the end of a measurement, we simply comment it out
+# import sounddevice as sd
+
+
 from pyqtgraph.Qt.QtWidgets import (QGraphicsProxyWidget, QLineEdit, QPushButton, QLabel, 
                                     QFormLayout, QWidget, QVBoxLayout, QComboBox, QListView, 
                                     QRadioButton, QGraphicsEllipseItem, QButtonGroup, 
@@ -1331,8 +1337,8 @@ class Logger(pg.GraphicsView):
             wave = 0.5 * np.sin(2 * np.pi * 440 * t)
 
             # Play the generated sound
-            sd.play(wave, 44100)
-            sd.wait()  # Wait until the sound is finished
+            # sd.play(wave, 44100)
+            # sd.wait()  # Wait until the sound is finished
 
             self.firstDec = [True, True, True]
 
