@@ -27,6 +27,7 @@ from pyqtgraph.Qt.QtGui import QRegExpValidator
 class InfineonSignalProcessing(QThread):
     collection_finished = pyqtSignal(object, str)
     signalLive = pyqtSignal()
+
     def __init__(self, stop_event,fps):
         super().__init__()
         self.fps=fps
@@ -42,8 +43,6 @@ class InfineonSignalProcessing(QThread):
 
         self.frame = np.empty((0), dtype = np.uint8)
         self.append_flag = False
-
-
 
 
     def run(self):
@@ -73,31 +72,22 @@ class InfineonSignalProcessing(QThread):
         self.ser = serial.Serial(device)
 
 
-
     def start_radar(self):
-
         len_antenna = self.num_chirps*self.samples_per_chirp
-
 
         try:
             self.ser.write(b"START")
 
             while not self.stop_event.is_set():
-
                 data = self.ser.readline()
-
                 #print(data)
 
                 if not self.append_flag:
-
                     if data == b"BEGIN\n":
-
                         self.append_flag=True
                 
                 else:
-
                     if(data == b"END\n"):
-                        
                         self.frame = self.frame[:-1]
 
                         if(self.frame.shape[0]==self.bytes_per_cir):
@@ -106,8 +96,6 @@ class InfineonSignalProcessing(QThread):
                             rx1 = self.frame[:len_antenna].reshape(self.num_chirps,self.samples_per_chirp)
                             rx2 = self.frame[len_antenna:len_antenna*2].reshape(self.num_chirps,self.samples_per_chirp)
                             rx3 = self.frame[len_antenna*2:].reshape(self.num_chirps,self.samples_per_chirp)
-
-
 
                             self.frames[self.samples_collected, 0] = rx1
                             self.frames[self.samples_collected, 1] = rx2
@@ -120,18 +108,12 @@ class InfineonSignalProcessing(QThread):
                                 break
 
                         else:
-
                             print("Frame of shape ",self.frame.shape, "discarded")
 
                         self.frame = np.empty((0), dtype=np.uint8 )
-
                         self.append_flag = False
 
-
-                        
-
                     else:
-
                         self.frame = np.concatenate([self.frame, np.frombuffer(data, dtype=np.uint8)])
 
             self.ser.write(b"STOP")
@@ -141,27 +123,16 @@ class InfineonSignalProcessing(QThread):
         except Exception as e:
             print(f"Error: {e}")
 
-        
-
-
-
-
 
     def stop_acquisition(self):
-
-
         #self.save_data()
-
         self.stop_event.set()
-
         #self.ser.close()
         
         print(f"Stopping radar data acquisition for {self.user_id}...")
 
-    
 
     def save_data(self):
-
         file_list = []
         filepath = "datasets/Infineon"
 
@@ -187,190 +158,12 @@ class InfineonSignalProcessing(QThread):
             data=self.frames[:,i,:,:]
             file = filepath+f"_Infineon_rx{i}.npy"
 
+            # NOTE: the output shape should be (total_samples_required, num_chirps=4, samples_per_chirp=128)
             np.save(file, data)
 
             file_list.append(file)
 
         self.collection_finished.emit(file_list, "Infineon")
-
-
-
-class SR250DevKitSignalProcessing(QThread):
-    collection_finished = pyqtSignal(object,str)
-    signalLive = pyqtSignal()
-
-    def __init__(self, stop_event,fps):
-        super().__init__()
-        self.fps=fps
-        self.stop_event = stop_event
-
-        self.taps = 128
-        
-        self.range_bins = 120
-        self.num_ant = 3
-        self.bytes_per_cir = self.taps * 4 *self.num_ant
-
-        self.frame = np.empty((0), dtype = np.uint8)
-        self.append_flag = False
-
-
-
-
-    def run(self):
-        self.start_radar() #return when total_samples_required are collected
-        if not self.stop_event.is_set():
-            self.save_data()
-        #self.stop_event.clear()
-        print("DATA ACQUISITION FINISHED!")
-
-
-    def set_parameters(self, device, samples_number, window_duration, user_id, activity, room, target_position, timestamp):
-        self.samples_number = samples_number
-        self.window_duration = window_duration
-        self.user_id = user_id
-        self.activity = activity
-        self.room = room
-        self.target_position = target_position
-        self.timestamp = timestamp
-        self.total_samples_required = self.samples_number * (self.fps * self.window_duration) + self.fps #add a second to have enough samples for decluttering
-
-        self.frames  = np.zeros((self.total_samples_required, self.num_ant, self.range_bins), dtype=np.complex64)
-        self.samples_collected = 0
- 
-        print(f"Starting radar data acquisition for {self.user_id}...")
-        print(f"Samples number: {self.samples_number}, Window duration: {self.window_duration} s")
-
-        self.ser = serial.Serial(device, 1500000, timeout=1)
-
-
-
-    def start_radar(self):
-
-        len_antenna = self.taps*2
-
-
-        try:
-            self.ser.write(b"START")
-
-            while not self.stop_event.is_set():
-
-                data = self.ser.readline()
-
-                #print(data)
-
-                if not self.append_flag:
-
-                    if data == b"BEGIN\n":
-
-                        self.append_flag=True
-                
-                else:
-
-                    if(data == b"END\n"):
-                        
-                        self.frame = self.frame[:-1]
-
-                        if(self.frame.shape[0]==self.bytes_per_cir):
-                            self.frame = self.frame.view(np.int16)
-                            
-                            rx1 = self.frame[:len_antenna]
-                            rx2 = self.frame[len_antenna:len_antenna*2]
-                            rx3 = self.frame[len_antenna*2:] 
-                            cir_casted_int16 = rx1[16:].reshape((len_antenna*2 - 32) // 4, 2)
-                            rx1_complex = (cir_casted_int16[:, 0] + 1j * cir_casted_int16[:, 1]).astype(np.complex64)
-
-                            cir_casted_int16 = rx2[16:].reshape((len_antenna*2 - 32) // 4, 2)
-                            rx2_complex = (cir_casted_int16[:, 0] + 1j * cir_casted_int16[:, 1]).astype(np.complex64)
-
-                            cir_casted_int16 = rx3[16:].reshape((len_antenna*2 - 32) // 4, 2)
-                            rx3_complex = (cir_casted_int16[:, 0] + 1j * cir_casted_int16[:, 1]).astype(np.complex64)
-
-
-                            self.frames[self.samples_collected, 0, :] = rx1_complex
-                            self.frames[self.samples_collected, 1, :] = rx2_complex
-                            self.frames[self.samples_collected, 2, :] = rx3_complex
-                            self.signalLive.emit()
-                            self.samples_collected +=1
-
-                            if self.samples_collected == self.total_samples_required:
-                                break
-
-                        else:
-
-                            print("Frame of shape ",self.frame.shape, "discarded")
-
-                        self.frame = np.empty((0), dtype=np.uint8 )
-
-                        self.append_flag = False
-
-
-                        
-
-                    else:
-
-                        self.frame = np.concatenate([self.frame, np.frombuffer(data, dtype=np.uint8)])
-
-            self.ser.write(b"STOP")
-            print("SR250DEV STOPPED")
-            self.ser.close()
-        
-        except Exception as e:
-            print(f"Error: {e}")
-
-        
-
-
-
-
-
-    def stop_acquisition(self):
-
-
-        #self.save_data()
-
-        self.stop_event.set()
-
-        #self.ser.close()
-        
-        print(f"Stopping radar data acquisition for {self.user_id}...")
-
-    
-
-    def save_data(self):
-
-        file_list = []
-        filepath = "datasets/SR250DevKit"
-
-        if not os.path.exists(filepath):
-            os.mkdir(filepath)
-
-        filename=f"{self.user_id}_{self.activity}"
-
-        if self.room:
-            filename += f"_{self.room}"
-
-        if self.target_position:
-            filename += f"_{self.target_position}"
-
-        filename += f"_{self.timestamp}"
-        
-
-        filepath = os.path.join(filepath,filename)
-
-        print(self.frames.shape)
-
-        for i in range(self.num_ant):
-
-            data=self.frames[:,i,:]
-            file = f"{filepath}_sr250_rx{i}.npy"
-
-            #data = data.view(np.float32)
-            np.save(file, data)
-
-            file_list.append(file)
-
-
-        self.collection_finished.emit(file_list,"SR250DevKit")
 
 
 class SR250MateSignalProcessing(QThread):
@@ -390,8 +183,6 @@ class SR250MateSignalProcessing(QThread):
 
         self.frame = np.empty((0), dtype = np.uint8)
         self.append_flag = False
-
-
 
 
     def run(self):
@@ -421,31 +212,22 @@ class SR250MateSignalProcessing(QThread):
         self.ser = serial.Serial(device, timeout=1)
 
 
-
     def start_radar(self):
-
         len_antenna = self.taps*2
-
 
         try:
             self.ser.write(b"START")
 
             while not self.stop_event.is_set():
-
                 data = self.ser.readline()
-
                 #print(data)
 
                 if not self.append_flag:
-
                     if data == b"BEGIN\n":
-
                         self.append_flag=True
                 
                 else:
-
-                    if(data == b"END\n"):
-                        
+                    if(data == b"END\n"):   
                         self.frame = self.frame[:-1]
 
                         if(self.frame.shape[0]==self.bytes_per_cir):
@@ -463,7 +245,6 @@ class SR250MateSignalProcessing(QThread):
                             cir_casted_int16 = rx3[16:].reshape((len_antenna*2 - 32) // 4, 2)
                             rx3_complex = (cir_casted_int16[:, 0] + 1j * cir_casted_int16[:, 1]).astype(np.complex64)
 
-
                             self.frames[self.samples_collected, 0, :] = rx1_complex
                             self.frames[self.samples_collected, 1, :] = rx2_complex
                             self.frames[self.samples_collected, 2, :] = rx3_complex
@@ -474,18 +255,12 @@ class SR250MateSignalProcessing(QThread):
                                 break
 
                         else:
-
                             print("Frame of shape ",self.frame.shape, "discarded")
 
                         self.frame = np.empty((0), dtype=np.uint8 )
-
                         self.append_flag = False
 
-
-                        
-
                     else:
-
                         self.frame = np.concatenate([self.frame, np.frombuffer(data, dtype=np.uint8)])
 
             self.ser.write(b"STOP")
@@ -494,33 +269,21 @@ class SR250MateSignalProcessing(QThread):
         except Exception as e:
             print(f"Error: {e}")
 
-        
-
-
-
-
 
     def stop_acquisition(self):
-
-
         #self.save_data()
-
         self.stop_event.set()
-
         #self.ser.close()
         
         print(f"Stopping radar data acquisition for {self.user_id}...")
 
-    
 
     def save_data(self):
-
         file_list = []
         filepath = "datasets/SR250Mate"
 
         if not os.path.exists(filepath):
             os.mkdir(filepath)
-
 
         filename=f"{self.user_id}_{self.activity}"
 
@@ -537,7 +300,7 @@ class SR250MateSignalProcessing(QThread):
         print(self.frames.shape)
 
         for i in range(self.num_ant):
-
+            # TODO: annotate this shape
             data=self.frames[:,i,:]
             file = f"{filepath}_sr250_rx{i}.npy"
 
@@ -545,192 +308,8 @@ class SR250MateSignalProcessing(QThread):
             np.save(file, data)
 
             file_list.append(file)
-
             
         self.collection_finished.emit(file_list, "SR250Mate")
-
-
-
-
-
-class X7SignalProcessing(QThread):
-    collection_finished = pyqtSignal(object)
-
-    def __init__(self, stop_event, fps):
-        super(X7SignalProcessing, self).__init__()
-
-        self.stop_event = stop_event
-        self.fps = fps
-        self.num_tx = 2
-        self.num_rx = 2
-        self.num_antennas = self.num_tx * self.num_rx
-
-        self.taps_before = 16
-        self.taps = 112
-        self.frame = np.empty((0), dtype=np.uint8)
-        self.append_flag =  False
-        self.discard = False
-        self.tx = 0
-
-        self.samples_collected = 0
-        self.counter = 0
-
-        self.win_number = 1
-        self.window_size = 15
-
-        self.user_id = "GenericUser"
-        self.activity = "generic"
-
-        
-        
-
-    def run(self):
-        
-        #while not self.stop_event.is_set():
-            #print("Processing signal")
-        #    time.sleep(2)
-
-        self.start_radar() #return when total_samples_required are collected
-        self.stop_event.clear()
-        self.save_data()
-        print("Stopping signal processing")
-
-    
-    
-
-
-    
-    def set_parameters(self, device, samples_number, window_size, user_id, activity, room, target_position, timestamp):
-        
-        self.samples_number = samples_number
-        self.window_size = window_size
-        self.user_id = user_id
-        self.activity = activity
-        self.room = room
-        self.target_position = target_position
-        self.timestamp = timestamp
-        self.total_samples_required = self.samples_number * (self.fps * self.window_size) + self.fps
-
-        self.samples_collected = 0
-        self.counter = 0
-        self.tx = 0
-
-        self.frames = np.zeros((self.total_samples_required, self.num_tx, self.num_rx, self.taps), dtype = np.complex64)
-
-        print(f"Starting radar data acquisition for {self.user_id}...")
-        print(f"Samples number: {self.samples_number}, Window duration: {self.window_size} s")
-
-        self.collect = True
-        self.ser = serial.Serial(device, 2000000, timeout=1)
-        
-    
-
-    def start_radar(self):
-
-        try:
-            self.ser.write(b"START")
-
-            while True and not self.stop_event.is_set():
-
-                data = self.ser.readline()
-
-                if not self.append_flag:
-
-                    if b"BEGIN" in data:
-
-                        self.append_flag = True
-
-                else:
-
-                    if(data == b"END\n"):
-                        self.frame =  self.frame[:-1]
-
-                        if(self.frame.shape[0] !=  1792):
-                            print(f"Frame length: {self.frame.shape[0]}")
-                            print("Frame discarded")
-                            self.frame = np.empty((0), dtype=np.uint8)
-                            self.append_flag = False
-                            self.discard = True
-
-                        else:
-                            self.frame = self.frame.view(np.float32)
-
-                            rx1 = self.frame[:224]
-                            rx2 = self.frame[224:]
-
-                            rx1_complex = rx1[:112] + 1j * rx1[112:]
-                            rx2_complex = rx2[:112] + 1j * rx2[112:]
-
-                            self.frames[self.samples_collected, self.tx, 0, :] = rx1_complex 
-                            self.frames[self.samples_collected, self.tx, 1, :] = rx2_complex
-
-                            self.frame = np.empty((0), dtype=np.uint8)
-
-                            self.append_flag = False
-
-
-                        if(self.tx == 1):
-
-                            if not self.discard:
-
-                                self.samples_collected += 1
-
-                                if self.samples_collected >= self.total_samples_required:
-                                    print("COLLECTION FINISHED")
-                                    self.ser.close()
-                                    return
-                            else:
-                                self.discard = False
-                            
-                        self.tx = self.tx ^1
-
-                    else:
-                        self.frame = np.concatenate([self.frame, np.frombuffer(data, dtype = np.uint8)])
-        
-        except Exception as e:
-            print(f"Error: {e}")
-
-
-    def decluttering (self, cirs, alpha):
-
-        result = []
-
-        dec_base = cirs[0]*0
-
-        normalization = (1+alpha)/2
-
-        for i in range(cirs.shape[0]):
-
-            result.append((cirs[i]- dec_base)*normalization)
-
-            dec_base = dec_base * alpha + cirs[i] * (1-alpha)
-
-        return result
-
-
-    def save_data(self):
-        
-        file_list = []
-
-        filepath = "dataset"
-
-        if not os.path.exists(filepath):
-            os.mkdir(filepath)
-
-        filename = f"{self.user_id}_{self.activity}_{self.room}_{self.target_position}_{self.timestamp}"
-        
-        filepath = os.path.join(filepath, filename)
-
-        for i in range(self.num_tx):
-            for j in range(self.num_rx):
-
-                self.frames[:, i, j, :] = self.decluttering(self.frames[:, i, j, :], 0.4)
-
-                np.save(f"{filepath}_x7_tx{i}rx{j}.npy", self.frames[10:self.frames.shape[0]-15, i, j, 16:86])
-
-                file_list.append(f"{filepath}_x7_tx{i}rx{j}.npy")
-
-        self.collection_finished.emit(file_list)
 
         
 class FormLayout(QWidget):
@@ -814,7 +393,6 @@ class FormLayout(QWidget):
         self.infineonActive.setLayoutDirection(Qt.RightToLeft)
         self.infineonActive.setStyleSheet("QCheckBox { color: crimson; }") 
         self.infineonActive.toggled.connect(self.init_serial_infineon)
-
         
         checkbox_layout.addWidget(self.sr250active)
         checkbox_layout.addStretch()
@@ -828,25 +406,20 @@ class FormLayout(QWidget):
 
 
     def add_special_activities(self, text):
-        
         if text == "Soggiorno":
-
             self.special_combobox.clear()
             self.special_combobox.addItem("Disteso sul divano")
 
         elif text == "Camera":
-
             self.special_combobox.clear()
             self.special_combobox.addItem("Disteso sul letto")
         
         elif text == "Bagno":
-
             self.special_combobox.clear()
             self.special_combobox.addItem("Disteso in vasca")
 
         else:
             self.special_combobox.clear()
-
 
 
     def toggle_special_combobox(self, text):
@@ -855,7 +428,6 @@ class FormLayout(QWidget):
             self.special_combobox.setVisible(True)
             self.special_label.setVisible(True)
             if self.room_textbox.text() == "":
-                
                 QMessageBox.warning(self, "Error", "Inserisci la stanza per visualizzare i casi speciali")
             
         else:
@@ -863,11 +435,7 @@ class FormLayout(QWidget):
             self.special_label.setVisible(False)
 
     
-
-
-    
     def init_serial_sr250(self):
-
         if self.sr250active.isChecked():
             ports = list_ports.comports()
             esp_port = None 
@@ -902,7 +470,6 @@ class FormLayout(QWidget):
 
 
     def init_serial_sr250_dev(self):
-
         if self.sr250DevActive.isChecked():
             ports = list_ports.comports()
             esp_port = None 
@@ -935,8 +502,8 @@ class FormLayout(QWidget):
             self.sr250DevActive.setStyleSheet("QCheckBox { color: crimson; }") 
             self.sr250DevPort = None
 
-    def init_serial_infineon(self):
 
+    def init_serial_infineon(self):
         if self.infineonActive.isChecked():
             ports = list_ports.comports()
             
@@ -981,8 +548,6 @@ class Logger(pg.GraphicsView):
         self.visualizationMode = "Heatmap"
 
         #self.grid_items = []  # To track polar grid elements
-
-        
 
         self.init_logger()
         l = pg.GraphicsLayout()
@@ -1039,8 +604,6 @@ class Logger(pg.GraphicsView):
         self.plot_item.hide()
 
         l.addItem(self.plot_item, colspan=1, rowspan=2)
-
-
         
         
         self.button = QPushButton("Change Visualization")
@@ -1058,6 +621,10 @@ class Logger(pg.GraphicsView):
         self.alpha = 0.9
         self.normalization = (1+self.alpha)/2
         self.decBase = np.empty((3, self.range_bins), dtype = np.complex64)
+
+        # NOTE: questa dovrebbe essere l'immagine da stampare a schermo
+        # 20*15 sono gli fps per i secondi di finestra hardcoded
+        # gli altri sono i bins
         imgdata = np.zeros((self.range_bins, int(20*15)), dtype=np.float32)
 
         self.img.append(pg.ImageItem(border="w"))
@@ -1074,7 +641,6 @@ class Logger(pg.GraphicsView):
         #l.addItem(self.sr250_plot, col=1, row=2)
         l.nextRow()
         
-
         self.img.append(pg.ImageItem(border="w"))
         self.img[1].setImage(imgdata)
         self.img[1].setColorMap("viridis")
@@ -1103,7 +669,8 @@ class Logger(pg.GraphicsView):
 
 
         self.show()
-        
+
+
     def make_centered_proxy(self,widget):
         container = QWidget()
         container.setObjectName("buttonContainer")
@@ -1117,11 +684,8 @@ class Logger(pg.GraphicsView):
         proxy.setWidget(container)
         return proxy
 
-        
-
 
     def init_logger(self):
-
         self.stop_event = threading.Event()
 
         """while True:
@@ -1207,8 +771,8 @@ class Logger(pg.GraphicsView):
             self.plot_item.addItem(rect)
             #self.grid_items.append(rect)
 
+
     def change_visualization(self):
-        
         if self.visualizationMode == "Heatmap": 
             self.plot_item.show()
             self.plt[0].hide()
@@ -1219,6 +783,7 @@ class Logger(pg.GraphicsView):
             self.plt[0].show()
             self.plt[1].show()
             self.visualizationMode="Heatmap"
+
 
     def show_polar_grid(self):
         self.plot_item.show()
@@ -1256,18 +821,15 @@ class Logger(pg.GraphicsView):
             button_proxy.setWidget(button)
 
             button_proxy.setTransformOriginPoint(button_proxy.rect().center())
-
             button_proxy.setTransform(pg.QtGui.QTransform().fromScale(1,-1))
-
-
             button_proxy.setPos(x,y)
         
             self.plot_item.addItem(button_proxy)
             #self.grid_items.append(button_proxy)
         self.button_group.buttonClicked.connect(self.toggle_radio)
 
+
     def toggle_radio(self,radio):
-        
         if self.last_checked == radio:
             # Same button clicked again — toggle it off
             self.button_group.setExclusive(False)
@@ -1277,8 +839,6 @@ class Logger(pg.GraphicsView):
         else:
             # New selection
             self.last_checked = radio
-        
-
         
     
     def start_collection(self):
@@ -1301,16 +861,14 @@ class Logger(pg.GraphicsView):
                     if(self.form.special_combobox.currentText()==""):
                         QMessageBox.warning(self, "Error", "Seleziona il caso speciale!")
                         return
-                    
 
                     else:
-
                         self.special_case = self.form.special_combobox.currentText()
-
                         self.activity += "_" + self.special_case
 
             self.room = self.form.room_textbox.text()
 
+            # è sempre uguale a 1 per i nostri scopi. Meglio specificato come numero di finestre
             self.samples_number = int(self.form.samples_number_textbox.text())
 
             self.window_duration = int(self.form.window_size_textbox.text())
@@ -1333,10 +891,10 @@ class Logger(pg.GraphicsView):
                 self.username = "GenericUser"
 
             time.sleep(int(self.form.timerComboBox.currentText()))
-            t = np.linspace(0, 0.5, int(44100 * 0.5), endpoint=False)
-            wave = 0.5 * np.sin(2 * np.pi * 440 * t)
 
             # Play the generated sound
+            # t = np.linspace(0, 0.5, int(44100 * 0.5), endpoint=False)
+            # wave = 0.5 * np.sin(2 * np.pi * 440 * t)
             # sd.play(wave, 44100)
             # sd.wait()  # Wait until the sound is finished
 
@@ -1350,12 +908,7 @@ class Logger(pg.GraphicsView):
                 self.dec_frames_sr250 = np.zeros((self.sr250_radar.total_samples_required,  self.sr250_radar.range_bins), dtype=np.complex64)
                 self.sr250_samples_collected = 0
             if self.form.sr250DevActive.isChecked():
-                self.sr250dev_radar = SR250DevKitSignalProcessing(stop_event=self.stop_event, fps = self.fps)
-                self.sr250dev_radar.collection_finished.connect(self.save_message)
-                self.sr250dev_radar.signalLive.connect(self.show_250_dev_hmap)
-                self.sr250dev_radar.set_parameters(self.form.sr250DevPort, self.samples_number, self.window_duration, self.username, self.activity, self.room, self.selected_pos, timestamp)
-                self.dec_frames_sr250dev = np.zeros((self.sr250dev_radar.total_samples_required,  self.sr250dev_radar.range_bins), dtype=np.complex64)
-                self.sr250dev_samples_collected = 0
+                assert(False)
             if self.form.infineonActive.isChecked():
                 self.infineon_radar = InfineonSignalProcessing(stop_event=self.stop_event, fps = self.fps)
                 self.infineon_radar.collection_finished.connect(self.save_message)
@@ -1367,24 +920,17 @@ class Logger(pg.GraphicsView):
             if self.form.sr250active.isChecked():
                 self.sr250_radar.start()
             if self.form.sr250DevActive.isChecked():
-                self.sr250dev_radar.start()
+                assert(False)
             if self.form.infineonActive.isChecked():
                 self.infineon_radar.start()
 
 
         else:
-
             QMessageBox.warning(self, "Error", "Connetti almeno un device!")
             return
-                
-
-
-
-
 
     
     def save_message(self, file_list, device_name):
-
         msg_box =  QMessageBox()
 
         msg_box.setWindowTitle("Conferma salvataggio")
@@ -1397,59 +943,48 @@ class Logger(pg.GraphicsView):
         msg_box.exec_()
 
         if(msg_box.clickedButton() == yes_btn):
-
             print("SAVED")
 
         elif(msg_box.clickedButton() == no_btn):
-
             for f in file_list:
                 os.remove(f)
             print("DISCARDED")
 
 
-
     def stop_collection(self):
-
         self.stop_event.set()
-
         print("Stop Collection")
 
 
-
     def decluttering(self, cir, rx):
-
         cir_abs = cir
 
         if self.firstDec[rx]:
-
             self.decBase[rx] = cir_abs
-
             self.firstDec[rx] = False
+
             return cir_abs*0
         
         else:
-
             res = ((self.alpha * self.decBase[rx]) + (1-self.alpha)*cir_abs)
             self.decBase[rx] = res
-
             res = (cir_abs - res)
 
             return res
-        
+
+
+    # NOTE: viene chiamata questa funzione con rx = 0 per SR250
     def decluttering_alt (self, cir, rx):
         cir_abs = cir
 
         if self.firstDec[rx]:
-
             self.decBase[rx] = cir_abs
 
             self.firstDec[rx] = False
             return cir_abs*0
         
         else:
-
             res = (cir - self.decBase[rx]) * self.normalization
-
             self.decBase[rx] = self.decBase[rx] * self.alpha + cir * (1-self.alpha)
 
             return res
@@ -1498,7 +1033,6 @@ class Logger(pg.GraphicsView):
     
     @pyqtSlot()
     def show_250_hmap(self):
-
         self.dec_frames_sr250[self.sr250_samples_collected,:] = self.decluttering_alt(self.sr250_radar.frames[self.sr250_samples_collected,0,:], 0)
         self.sr250_samples_collected += 1
         self.img[0].setImage(np.abs(self.dec_frames_sr250).T, autolevels = True)
@@ -1506,19 +1040,17 @@ class Logger(pg.GraphicsView):
 
     @pyqtSlot()
     def show_250_dev_hmap(self):
-
         self.dec_frames_sr250dev[self.sr250dev_samples_collected,:] = self.decluttering_alt(self.sr250dev_radar.frames[self.sr250dev_samples_collected,0,:], 1)
         self.sr250dev_samples_collected += 1
         self.img[0].setImage(np.abs(self.dec_frames_sr250dev).T, autolevels = True)
         self.plt[0].getViewBox().autoRange()
 
 
-
     @pyqtSlot()
     def show_infineon_hmap(self):
-
         self.range_window = signal.windows.blackmanharris(128).reshape(1, 128)
         
+        # NOTE: sembra proprio che l'infineon produca dati grezzi, mentre SR250 dati già passati attraverso la fft!
         data = 2 * self.infineon_radar.frames[self.infineon_samples_collected,0,:] / 4095 -1.0 
         data = self.fft_spectrum(data, self.range_window)
         data = np.divide(data.sum(axis=0), 4)
@@ -1530,9 +1062,7 @@ class Logger(pg.GraphicsView):
         self.plt[1].getViewBox().autoRange()
 
 
-
 if __name__ == '__main__':
-
     app = pg.mkQApp("TRUESENSE - Fall Detection Dataset Collector")
 
     with open('./UbuntuStyle.css', 'r') as f:
