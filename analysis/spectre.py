@@ -32,6 +32,7 @@ def process_file(filepath: str):
 
     peaks = scipy.signal.find_peaks(power, distance=10, threshold=1)[0]
 
+    plt.figure()
     plt.title(stem)
     plt.plot(frequency_range_bpm, power)
 
