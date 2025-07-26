@@ -23,7 +23,10 @@ def get_experiment_names(sensor: str, experiment: str, subject = None, antenna =
             sub = atoms[1]
             ant = atoms[-1].split('.')[0]
 
-            if (sub == subject) and (ant == antenna):
+            matches_subject = (subject is None) or ((subject is not None) and (sub == subject))
+            matches_antenna = (antenna is None) or ((antenna is not None) and (ant == antenna))
+
+            if matches_subject and matches_antenna:
                 filtered.append(name)
 
         experiment_list = filtered
