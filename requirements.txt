@@ -7,3 +7,4 @@ sounddevice==0.5.1
 scipy
 pyserial
 PyQt5
+scikit-learn
