@@ -38,3 +38,18 @@ def load_experiment(base_folder_path: str, name: str) -> np.ndarray:
     complete_path = os.path.join(base_folder_path, name)
 
     return np.load(complete_path)
+
+
+# adapted from logger.py `declutter_alt` function
+def declutter(cir: np.ndarray, alpha: float = 0.9, normalization: float = None) -> np.ndarray:
+    if normalization is None:
+        normalization = (1+alpha) / 2
+
+    decBase = cir[0]
+    res = np.empty_like(cir)
+
+    for i in range(cir.shape[0]):
+        res[i] = normalization * (cir[i] - decBase)
+        decBase = alpha * decBase + (1-alpha) * cir[i]
+
+    return res
