@@ -72,6 +72,7 @@ class FormLayout(QtWidgets.QWidget):
             atoms.append(group_id_text)
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Seleziona nome gruppo")
+            return None
 
         if subject_text != '':
             atoms.append(subject_text)
@@ -80,6 +81,7 @@ class FormLayout(QtWidgets.QWidget):
             atoms.append(activity_text)
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Seleziona nome attività")
+            return None
 
         if additional_info_text != '':
             atoms.append(additional_info_text)
@@ -95,6 +97,7 @@ class FormLayout(QtWidgets.QWidget):
 class DeviceLayout(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.com_table = []
         self._build_layout()
 
     def _perform_handshake(self, device: str) -> str:
@@ -111,6 +114,7 @@ class DeviceLayout(QtWidgets.QWidget):
             return ''
 
     def _build_com_table(self):
+        old_com = self.com_table
         com = []
 
         for port in list_ports.comports():
@@ -125,8 +129,6 @@ class DeviceLayout(QtWidgets.QWidget):
                     'enabled': True
                 }
                 com.append(sensor)
-
-        self.com_table = com
 
         # Vorremmo visualizzare i device in una lista (scrollable), per farlo questa funzione
         # deve modificare il layout interno detto `self.device_list_layout`, che potrebbe già contenere
@@ -145,18 +147,26 @@ class DeviceLayout(QtWidgets.QWidget):
         #
         # la seconda soluzione mi sembra nello stesso spirito della classe FormLayout, quindi la implementerò così.
         # Sarebbe bello se qualcuno con esperienza di UI mi desse un feedback
+
+        last_enabled_devices = set(dev['name'] for dev in self._get_enabled_devices(old_com))
         while self.checkbox_container.count():
             child = self.checkbox_container.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+
+        self.checkboxes.clear()
 
         for dev in com:
             container = QtWidgets.QWidget()
             layout = QtWidgets.QHBoxLayout(container)
 
             checkbox = QtWidgets.QCheckBox(dev['name'])
-            checkbox.setChecked(True)
             checkbox.setLayoutDirection(Qt.LeftToRight)
+
+            # questa è una cosa un po' sofisticata, ma che migliora l'esperienza utente:
+            # se l'utente ha già selezionato un device, il refresh lo fa deselezionare.
+            # risolvo la cosa salvandomi prima una struttura di device enabled
+            checkbox.setChecked(dev['name'] in last_enabled_devices)
 
             device_port_label = QtWidgets.QLabel(dev['device'])
             device_port_label.setStyleSheet('''
@@ -169,12 +179,16 @@ class DeviceLayout(QtWidgets.QWidget):
             layout.addWidget(device_port_label)
 
             self.checkbox_container.addWidget(container)
+            self.checkboxes.append(checkbox)
+
+        self.com_table = com
 
     def _build_layout(self):
         self.main_layout = QtWidgets.QVBoxLayout()
         title_layout = QtWidgets.QHBoxLayout()
 
         # Create a container for the checkboxes with scroll capability
+        self.checkboxes = []
         self.checkbox_container = QtWidgets.QVBoxLayout()
         checkbox_frame = QtWidgets.QFrame()
         checkbox_frame.setLayout(self.checkbox_container)
@@ -204,8 +218,29 @@ class DeviceLayout(QtWidgets.QWidget):
 
         self.setLayout(self.main_layout)
 
+    def _get_enabled_devices(self, com_table: list):
+        # qui convertiamo le informazioni delle checkbox in una lista di sensori abilitati
+        # L'ordine della lista `self.com_table` è lo stesso ordine di inserimento dei widget
+        enabled_devices = []
+        for i, device in enumerate(com_table):
+            if self.checkboxes[i].checkState() == Qt.CheckState.Checked:
+                enabled_devices.append(device)
+
+        return enabled_devices
+
     def get_device_info(self):
-        return self.com_table
+        radar_sensors = ['Infineon', 'SR250_ESP32']
+        enabled_devices = self._get_enabled_devices(self.com_table)
+        has_a_radar_sensor = False
+
+        for device in enabled_devices:
+            has_a_radar_sensor = device['name'] in radar_sensors
+
+        if has_a_radar_sensor:
+            return enabled_devices
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error", "Seleziona almeno un sensore radar")
+            return None
 
 
 class MyMainWindow(QtWidgets.QMainWindow):
