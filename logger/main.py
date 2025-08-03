@@ -89,13 +89,12 @@ class FormLayout(QtWidgets.QWidget):
         name = '_'.join(atoms)
         window_size = int(self.window_size_textbox.text())
 
-        return name, window_size
+        return name, activity_text, window_size
 
 
 class DeviceLayout(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.com_table = self._build_com_table()
         self._build_layout()
 
     def _perform_handshake(self, device: str) -> str:
@@ -119,6 +118,7 @@ class DeviceLayout(QtWidgets.QWidget):
             name = self._perform_handshake(device)
 
             if name != '':
+                name = name.strip('\n')
                 sensor = {
                     'name': name,
                     'device': device,
@@ -127,12 +127,61 @@ class DeviceLayout(QtWidgets.QWidget):
                 com.append(sensor)
 
         self.com_table = com
-        print(com)
+
+        # Vorremmo visualizzare i device in una lista (scrollable), per farlo questa funzione
+        # deve modificare il layout interno detto `self.device_list_layout`, che potrebbe già contenere
+        # degli elementi che andrebbero rimossi prima di operare.
+        # Non ho capito bene come funziona questa cosa, posso provare a inserire uno snippet prodotto da chatgpt
+        #
+        # Una feature interessante è la possibilità di selezionare quali sensori leggere durante la misurazione
+        # Questo significa che la lista deve contenere delle checkbox (o gli elementi stessi potrebbero essere checkbox)
+        # per lasciare all'utente la scelta.
+        #
+        # Lo stato dei sensori (nome, device e enabled) al momento è memorizzato in una lista.
+        # C'è bisogno di associare ogni elemento della lista ad una checkbox differente, e ho pensato a due soluzioni:
+        #   1. collegare le checkbox al dato corrispondente: ad ogni toggle cambio il campo enabled del sensore corrispondente
+        #   2. fare il mapping solo quando viene richiesto: come i parametri dell'acquisizione sono assemblati e validati solo
+        #      nella funzione FormLayout.get_acquisition_info(), si potrebbe fare qui
+        #
+        # la seconda soluzione mi sembra nello stesso spirito della classe FormLayout, quindi la implementerò così.
+        # Sarebbe bello se qualcuno con esperienza di UI mi desse un feedback
+        while self.checkbox_container.count():
+            child = self.checkbox_container.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        for dev in com:
+            container = QtWidgets.QWidget()
+            layout = QtWidgets.QHBoxLayout(container)
+
+            checkbox = QtWidgets.QCheckBox(dev['name'])
+            checkbox.setChecked(True)
+            checkbox.setLayoutDirection(Qt.LeftToRight)
+
+            device_port_label = QtWidgets.QLabel(dev['device'])
+            device_port_label.setStyleSheet('''
+                color: gray;
+                font-weight: lighter;
+            ''')
+
+            layout.addWidget(checkbox)
+            layout.addStretch()
+            layout.addWidget(device_port_label)
+
+            self.checkbox_container.addWidget(container)
 
     def _build_layout(self):
-        main_layout = QtWidgets.QVBoxLayout()
+        self.main_layout = QtWidgets.QVBoxLayout()
         title_layout = QtWidgets.QHBoxLayout()
-        self.device_list_layout = QtWidgets.QVBoxLayout()
+
+        # Create a container for the checkboxes with scroll capability
+        self.checkbox_container = QtWidgets.QVBoxLayout()
+        checkbox_frame = QtWidgets.QFrame()
+        checkbox_frame.setLayout(self.checkbox_container)
+
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(checkbox_frame)
 
         title = QtWidgets.QLabel('Device list')
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -144,16 +193,19 @@ class DeviceLayout(QtWidgets.QWidget):
 
         self.refresh_button = QtWidgets.QPushButton('refresh')
         self.refresh_button.clicked.connect(self._build_com_table)
+        self.refresh_button.click()
 
         title_layout.addWidget(title)
         title_layout.addSpacing(5)
         title_layout.addWidget(self.refresh_button)
-        title_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        main_layout.addItem(title_layout)
-        main_layout.addItem(self.device_list_layout)
+        self.main_layout.addItem(title_layout)
+        self.main_layout.addWidget(scroll_area)
 
-        self.setLayout(main_layout)
+        self.setLayout(self.main_layout)
+
+    def get_device_info(self):
+        return self.com_table
 
 
 class MyMainWindow(QtWidgets.QMainWindow):
