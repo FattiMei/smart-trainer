@@ -1,5 +1,4 @@
 import time
-import json
 import serial
 from serial.tools import list_ports
 
@@ -11,43 +10,19 @@ from vispy.app import use_app
 from vispy.scene import STTransform
 
 
-def scan_com_ports(blacklist=[]):
-    com = {}
-
-    for port in list_ports.comports():
-        device = port.device
-
-        if device not in blacklist:
-            try:
-                # ser = serial.Serial(device, baudrate=1500000, timeout=1)
-                ser = serial.Serial(device, timeout=1)
-                ser.write(b'INFO\r\n')
-                res = ser.readlines()
-
-                if len(res) > 0:
-                    name = res[-1].decode('utf-8')
-                    com[name] = device
-
-            except:
-                pass
-
-    return com
-
-
 class FormLayout(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Acquisition parameters')
         self._build_layout()
 
     def _build_layout(self):
         main_layout = QtWidgets.QVBoxLayout()
         form_layout = QtWidgets.QFormLayout()
 
-        self.group_id_textbox = QtWidgets.QLineEdit(placeholderText='Group ID')
-        self.subject_textbox = QtWidgets.QLineEdit(placeholderText='Subject name')
-        self.activity_textbox = QtWidgets.QLineEdit(placeholderText='Nome esperimento')
-        self.additional_info_textbox = QtWidgets.QLineEdit(placeholderText='Parametri esperimento')
+        self.group_id_textbox = QtWidgets.QLineEdit()
+        self.subject_textbox = QtWidgets.QLineEdit()
+        self.activity_textbox = QtWidgets.QLineEdit()
+        self.additional_info_textbox = QtWidgets.QLineEdit()
 
         self.window_size_textbox = QtWidgets.QLineEdit()
         self.window_size_textbox.setText('15')
@@ -109,10 +84,76 @@ class FormLayout(QtWidgets.QWidget):
         if additional_info_text != '':
             atoms.append(additional_info_text)
 
+        atoms.append(time.strftime("%Y%m%d-%H%M%S"))
+
         name = '_'.join(atoms)
         window_size = int(self.window_size_textbox.text())
 
         return name, window_size
+
+
+class DeviceLayout(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.com_table = self._build_com_table()
+        self._build_layout()
+
+    def _perform_handshake(self, device: str) -> str:
+        try:
+            ser = serial.Serial(device, timeout=1)
+            ser.write(b'INFO\r\n')
+            res = ser.readlines()
+
+            if len(res) > 0:
+                name = res[-1].decode('utf-8')
+                return name
+
+        except:
+            return ''
+
+    def _build_com_table(self):
+        com = []
+
+        for port in list_ports.comports():
+            device = port.device
+            name = self._perform_handshake(device)
+
+            if name != '':
+                sensor = {
+                    'name': name,
+                    'device': device,
+                    'enabled': True
+                }
+                com.append(sensor)
+
+        self.com_table = com
+        print(com)
+
+    def _build_layout(self):
+        main_layout = QtWidgets.QVBoxLayout()
+        title_layout = QtWidgets.QHBoxLayout()
+        self.device_list_layout = QtWidgets.QVBoxLayout()
+
+        title = QtWidgets.QLabel('Device list')
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setFixedHeight(30)
+        title.setStyleSheet("""
+            font-weight: bold;
+            font-size: 20px;
+        """)
+
+        self.refresh_button = QtWidgets.QPushButton('refresh')
+        self.refresh_button.clicked.connect(self._build_com_table)
+
+        title_layout.addWidget(title)
+        title_layout.addSpacing(5)
+        title_layout.addWidget(self.refresh_button)
+        title_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        main_layout.addItem(title_layout)
+        main_layout.addItem(self.device_list_layout)
+
+        self.setLayout(main_layout)
 
 
 class MyMainWindow(QtWidgets.QMainWindow):
@@ -123,7 +164,10 @@ class MyMainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
 
         self.form = FormLayout()
+        self.device_scanner = DeviceLayout()
+
         layout.addWidget(self.form)
+        layout.addWidget(self.device_scanner)
 
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
