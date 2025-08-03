@@ -1,10 +1,14 @@
+# requirements for logger functionality
 matplotlib==3.10.0
 numpy==2.2.1
 paho_mqtt==2.1.0
 pyftpdlib==2.0.0
 pyqtgraph==0.13.7
 sounddevice==0.5.1
-scipy
 pyserial
 PyQt5
+vispy
+
+# requirements for analysis
+scipy
 scikit-learn
