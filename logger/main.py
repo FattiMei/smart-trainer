@@ -1,6 +1,7 @@
 import time
 import serial
 from serial.tools import list_ports
+from threading import Lock
 
 from PyQt5.QtCore import Qt
 from PyQt5 import QtWidgets
@@ -95,9 +96,10 @@ class FormLayout(QtWidgets.QWidget):
 
 
 class DeviceLayout(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, serial_lock=None, parent=None):
         super().__init__(parent)
         self.com_table = []
+        self.serial_lock = serial_lock
         self._build_layout()
 
     def _perform_handshake(self, device: str) -> str:
@@ -114,6 +116,12 @@ class DeviceLayout(QtWidgets.QWidget):
             return ''
 
     def _build_com_table(self):
+        if self.serial_lock.locked():
+            print('Device list scan failed because another operation is occupying the serial bus')
+            return
+        else:
+            self.serial_lock.acquire()
+
         old_com = self.com_table
         com = []
 
@@ -121,7 +129,7 @@ class DeviceLayout(QtWidgets.QWidget):
             device = port.device
             name = self._perform_handshake(device)
 
-            if name != '':
+            if name is not None and name != '':
                 name = name.strip('\n')
                 sensor = {
                     'name': name,
@@ -129,6 +137,8 @@ class DeviceLayout(QtWidgets.QWidget):
                     'enabled': True
                 }
                 com.append(sensor)
+
+        self.serial_lock.release()
 
         # Vorremmo visualizzare i device in una lista (scrollable), per farlo questa funzione
         # deve modificare il layout interno detto `self.device_list_layout`, che potrebbe già contenere
@@ -246,18 +256,49 @@ class DeviceLayout(QtWidgets.QWidget):
 class MyMainWindow(QtWidgets.QMainWindow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.serial_lock = Lock()
 
         central_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
+        control_buttons_layout = QtWidgets.QHBoxLayout()
 
         self.form = FormLayout()
-        self.device_scanner = DeviceLayout()
+        self.device_scanner = DeviceLayout(self.serial_lock)
+
+        self.start_button = QtWidgets.QPushButton('Start Collection')
+        self.start_button.clicked.connect(self.start_collection)
+
+        control_buttons_layout.addWidget(self.start_button)
 
         layout.addWidget(self.form)
         layout.addWidget(self.device_scanner)
+        layout.addItem(control_buttons_layout)
 
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
+
+    def start_collection(self):
+        if self.serial_lock.locked():
+            QtWidgets.QMessageBox.warning(self, "Error", "Il bus seriale è occupato")
+            return
+
+        self.serial_lock.acquire()
+
+        self.start_button.setText('Stop Collection')
+        self.start_button.clicked.disconnect(self.start_collection)
+        self.start_button.clicked.connect(self.stop_collection)
+
+        # qui c'è la logica di spawn dei thread e la visualizzazione
+
+
+    def stop_collection(self):
+        self.serial_lock.release()
+        self.start_button.setText('Start Collection')
+        self.start_button.clicked.disconnect(self.stop_collection)
+        self.start_button.clicked.connect(self.start_collection)
+
+        # qui c'è la logica del salvataggio file da copiare
+        # dal logger originale
 
 
 if __name__ == '__main__':
