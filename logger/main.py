@@ -10,89 +10,7 @@ from vispy import scene
 from vispy.app import use_app
 from vispy.scene import STTransform
 
-
-class FormLayout(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._build_layout()
-
-    def _build_layout(self):
-        main_layout = QtWidgets.QVBoxLayout()
-        form_layout = QtWidgets.QFormLayout()
-
-        self.group_id_textbox = QtWidgets.QLineEdit()
-        self.subject_textbox = QtWidgets.QLineEdit()
-        self.activity_textbox = QtWidgets.QLineEdit()
-        self.additional_info_textbox = QtWidgets.QLineEdit()
-
-        self.window_size_textbox = QtWidgets.QLineEdit()
-        self.window_size_textbox.setText('15')
-        self.window_size_textbox.setValidator(QIntValidator())
-
-        self.acquisition_delay_textbox = QtWidgets.QLineEdit()
-        self.acquisition_delay_textbox.setText('1')
-        self.acquisition_delay_textbox.setValidator(QIntValidator())
-
-        form_layout.addRow(QtWidgets.QLabel('Group ID: '), self.group_id_textbox)
-        form_layout.addRow(QtWidgets.QLabel('Subject: '), self.subject_textbox)
-        form_layout.addRow(QtWidgets.QLabel('Activity: '), self.activity_textbox)
-        form_layout.addRow(QtWidgets.QLabel('Parameters: '), self.additional_info_textbox)
-        form_layout.addRow(QtWidgets.QLabel('Window size (s): '), self.window_size_textbox)
-        form_layout.addRow(QtWidgets.QLabel('Acquisition delay (s): '), self.acquisition_delay_textbox)
-
-        title = QtWidgets.QLabel('Acquisition parameters')
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setFixedHeight(30)
-        title.setStyleSheet("""
-            font-weight: bold;
-            font-size: 20px;
-        """)
-
-        main_layout.addWidget(title)
-        main_layout.addSpacing(5)
-        main_layout.addItem(form_layout)
-
-        self.setLayout(main_layout)
-
-    def get_acquisition_info(self):
-        atoms = []
-
-        group_id_text = self.group_id_textbox.text()
-        subject_text = self.subject_textbox.text()
-        activity_text = self.activity_textbox.text()
-        additional_info_text = self.additional_info_textbox.text()
-
-        # manual input validation
-        #
-        # Non sono riuscito a trovare una soluzione dichiarativa, quindi ci teniamo
-        # questo spaghetti code. Validare anche il campo soggetto e info mi serve
-        # perchè nell'unire gli atomi con '_' non voglio che si presenti la situazione
-        # 'foo__baz' solo perché il campo `bar` è ''
-
-        if group_id_text != '':
-            atoms.append(group_id_text)
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Seleziona nome gruppo")
-            return None
-
-        if subject_text != '':
-            atoms.append(subject_text)
-
-        if activity_text != '':
-            atoms.append(activity_text)
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Seleziona nome attività")
-            return None
-
-        if additional_info_text != '':
-            atoms.append(additional_info_text)
-
-        atoms.append(time.strftime("%Y%m%d-%H%M%S"))
-
-        name = '_'.join(atoms)
-        window_size = int(self.window_size_textbox.text())
-
-        return name, activity_text, window_size
+from form import ExperimentParametersForm
 
 
 class DeviceLayout(QtWidgets.QWidget):
@@ -262,7 +180,7 @@ class MyMainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout()
         control_buttons_layout = QtWidgets.QHBoxLayout()
 
-        self.form = FormLayout()
+        self.form = ExperimentParametersForm()
         self.device_scanner = DeviceLayout(self.serial_lock)
 
         self.start_button = QtWidgets.QPushButton('Start Collection')
@@ -278,6 +196,8 @@ class MyMainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central_widget)
 
     def start_collection(self):
+        experiment_parameters = self.form.get_acquisition_info()
+
         if self.serial_lock.locked():
             QtWidgets.QMessageBox.warning(self, "Error", "Il bus seriale è occupato")
             return
