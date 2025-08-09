@@ -1,6 +1,5 @@
 import time
 import numpy as np
-import itertools
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -24,16 +23,8 @@ class RollingLine:
         self.ax.set_ylim((-1.0, 1.0))
         self.line = ax.plot(t, y)[0]
 
-        self.update(frame=0)
-
-    def update(self, frame):
-        # non si cambiano i punti, ma il sistema di riferimento
-        # questo implica la necessità di avere a disposizione
-        # il wall time
-        self.ax.set_xlim((
-            FRAME_TIME_SECONDS * frame,
-            FRAME_TIME_SECONDS * frame + self.window_size_seconds
-        ))
+    def update(self, t: float):
+        self.ax.set_xlim((t, t + self.window_size_seconds))
 
         return self.line
 
@@ -50,11 +41,8 @@ class RollingImage:
         self.ax.set_title("Rolling image")
         self.pcolormesh = ax.pcolormesh(tt, xx, np.sin(tt))
 
-    def update(self, frame):
-        self.ax.set_xlim((
-            FRAME_TIME_SECONDS * frame,
-            FRAME_TIME_SECONDS * frame + self.window_size_seconds
-        ))
+    def update(self, t: float):
+        self.ax.set_xlim((t, t + self.window_size_seconds))
 
         return self.pcolormesh
 
@@ -68,8 +56,9 @@ if __name__ == '__main__':
     ]
 
     def update(frame):
+        t = frame * FRAME_TIME_SECONDS
         return [
-            sensor.update(frame)
+            sensor.update(t)
             for sensor in sensors
         ]
 
