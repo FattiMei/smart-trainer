@@ -1,3 +1,4 @@
+import time
 import serial
 from serial.tools import list_ports
 
@@ -20,43 +21,45 @@ Device = namedtuple(
     'Device',
     [
         'name',
-        'port'
+        'port',
+        'serial_obj'
     ]
 )
 
 
 def perform_handshake(port: str):
+    INFO_MESSAGE = b'INFO\r\n'
+
     try:
         ser = serial.Serial(port, timeout=1)
-        ser.write(b'INFO\r\n')
-        res = ser.readlines()
-
-        if len(res) > 0:
-            name = res[-1].decode('utf-8', errors='ignore')
-            return name
-        
     except:
         return None
+
+    bytes_written = ser.write(INFO_MESSAGE)
+    assert(len(INFO_MESSAGE) == bytes_written)
+
+    ser.send_break()
+    res = ser.readlines()
+
+    print(res)
+
+    if res != []:
+        name = res[-1].strip(b'\n\r').decode('ascii', errors='ignore')
+        return Device(name, port, ser)
 
 
 # this primitive function doesn't concern with the state (possibly busy)
 # of the serial bus. Other wrappers may implement more complex logic.
 def scan_for_devices():
-    com = []
+    devices = []
 
     for port in list_ports.comports():
-        device = port.device
-        name = perform_handshake(device)
+        dev = perform_handshake(port.device)
 
-        if name is not None and name != '':
-            name = name.strip('\n')
-            sensor = Device(
-                name=name,
-                port=device
-            )
-            com.append(sensor)
+        if dev is not None:
+            devices.append(dev)
 
-    return com
+    return devices
 
 
 class DeviceSelector(QWidget):

@@ -12,27 +12,29 @@ class Sensor:
     def __init__(self, device: Device, responds_after_start=False):
         self.name = device.name
         self.timestamps = []
-        self.ser = serial.Serial(device.port, timeout=1)
+        self.ser = device.serial_obj
 
         self.responds_after_start = responds_after_start
 
     def read(self):
         while self.reading:
-            begin = self.ser.readline()
-            assert(begin == b'BEGIN\n')
+            begin = self.ser.readline().strip(b'\n\r')
+            assert(begin == b'BEGIN')
 
             timestamp = perf_counter() - self.start_time
             self.timestamps.append(timestamp)
 
             while True:
                 data = self.ser.readline()
+                possible_end = data.strip(b'\n\r')
 
-                if data == b'END\n':
+                if possible_end == b'END':
                     break
 
-    def start(self):
+    def start(self, start_time):
         self.ser.write(b'START')
-        self.start_time = perf_counter()
+        self.ser.send_break()
+        self.start_time = start_time
 
         if self.responds_after_start:
             _ = self.ser.readline()
@@ -45,9 +47,10 @@ class Sensor:
         self.reading = False
         self.read_thread.join(timeout=2)
         self.ser.write(b'STOP')
+        self.ser.send_break()
 
 
-WINDOW_SIZE_SECONDS = 1
+WINDOW_SIZE_SECONDS = 4
 COLORS = ['red', 'green', 'blue', 'orange']
 
 
@@ -68,8 +71,9 @@ if __name__ == '__main__':
     print()
 
     print(f'Begin sample collection for {WINDOW_SIZE_SECONDS} seconds')
+    start_time = perf_counter()
     for sensor in sensors:
-        sensor.start()
+        sensor.start(start_time)
 
     time.sleep(WINDOW_SIZE_SECONDS)
 
