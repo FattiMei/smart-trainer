@@ -31,20 +31,33 @@ def perform_handshake(port: str):
     INFO_MESSAGE = b'INFO\r\n'
 
     try:
-        ser = serial.Serial(port, timeout=1)
+        ser = serial.Serial(port)
     except:
         return None
 
+    # questo delay è necessario per i sensori con Arduino
+    # l'apertura di una comunicazione seriale con l'oggetto `serial.Serial`
+    # triggera il reset dell'Arduino da parte del suo bootloader.
+    #
+    # Questo rende l'Arduino irrangiungibile per un paio di secondi,
+    # quindi non gli arriverebbe `INFO_MESSAGE` anche se l'istruzione
+    # non genera eccezioni.
+    #
+    # Siccome non riesco a discriminare a priori quale device è un Arduino,
+    # metto il delay ad ogni handshake.
+    # NOTA che se non abbiamo i permessi necessari sulla porta, questa
+    # funzione esce prima di fare il delay e aspettare inutilmente.
+    time.sleep(3)
+
     bytes_written = ser.write(INFO_MESSAGE)
     assert(len(INFO_MESSAGE) == bytes_written)
+    res = ser.readline()
 
-    ser.send_break()
-    res = ser.readlines()
+    if res != b'':
+        name = res.strip(b'\n\r').decode('ascii', errors='ignore')
 
-    print(res)
-
-    if res != []:
-        name = res[-1].strip(b'\n\r').decode('ascii', errors='ignore')
+        # Per le ragioni specificate sopra, restituisco anche l'oggetto seriale
+        # così da non riaprire la comunicazione causando ulteriori reset
         return Device(name, port, ser)
 
 

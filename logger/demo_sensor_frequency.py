@@ -9,6 +9,9 @@ from devscan import scan_for_devices, Device
 
 
 class Sensor:
+    START_MESSAGE = b'START'
+    STOP_MESSAGE = b'STOP'
+
     def __init__(self, device: Device, responds_after_start=False):
         self.name = device.name
         self.timestamps = []
@@ -32,8 +35,9 @@ class Sensor:
                     break
 
     def start(self, start_time):
-        self.ser.write(b'START')
-        self.ser.send_break()
+        bytes_written = self.ser.write(b'START')
+        assert(len(self.START_MESSAGE) == bytes_written)
+
         self.start_time = start_time
 
         if self.responds_after_start:
@@ -46,8 +50,9 @@ class Sensor:
     def stop(self):
         self.reading = False
         self.read_thread.join(timeout=2)
-        self.ser.write(b'STOP')
-        self.ser.send_break()
+
+        bytes_written = self.ser.write(b'STOP')
+        assert(len(self.STOP_MESSAGE) == bytes_written)
 
 
 WINDOW_SIZE_SECONDS = 4
