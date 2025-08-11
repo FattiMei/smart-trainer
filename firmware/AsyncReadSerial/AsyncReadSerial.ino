@@ -18,7 +18,9 @@ enum class State {
 
 const char* name = "Arduino_trigger";
 State state;
-unsigned long last_measurement = 0;
+
+int last_trigger_state;
+unsigned long last_trigger_time;
 
 
 void setup() {
@@ -26,6 +28,8 @@ void setup() {
 	state = State::WAITING;
 
 	pinMode(TRIGGER_PIN, INPUT);
+	last_trigger_state = HIGH;
+	last_trigger_time = 0;
 }
 
 
@@ -49,19 +53,22 @@ void loop() {
 			break;
 
 		case State::READING:
-			int trigger_state = digitalRead(TRIGGER_PIN);
-			// questo trigger è un active LOW
-			if (trigger_state == LOW) {
-				const unsigned long now = millis();
+			const int trigger_state = digitalRead(TRIGGER_PIN);
 
-				if (now - last_measurement > DEBOUNCE_TIME_MILLIS) {
-						last_measurement = now;
+			// questo particolare sensore viene triggerato sul fronte di discesa
+			if (trigger_state == LOW and last_trigger_state == HIGH) {
+				const auto now = millis();
 
-						Serial.println("BEGIN");
-						Serial.println(1);
-						Serial.println("END");
+				if ((now - last_trigger_time) > DEBOUNCE_TIME_MILLIS) {
+					last_trigger_time = now;
+				
+					Serial.println("BEGIN");
+					Serial.println(1);
+					Serial.println("END");
 				}
 			}
+
+			last_trigger_state = trigger_state;
 
 			if (Serial.available() > 0) {
 				String res = Serial.readString();
