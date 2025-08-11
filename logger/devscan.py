@@ -51,10 +51,22 @@ def perform_handshake(port: str):
 
     bytes_written = ser.write(INFO_MESSAGE)
     assert(len(INFO_MESSAGE) == bytes_written)
-    res = ser.readline()
+
+    # sfortunatamente non posso leggere soltanto una riga dalla seriale
+    # perché il sensore SR250 risponde con due righe di cui la seconda è il suo nome
+    #
+    # per gestire tutti i sensori con una unica chiamata la soluzione che ho trovato
+    # è leggere tutti i dati disponibili con la chiamata `read_all()`.
+    # da esperimenti con tutti i sensori (Arduino e radar) sembra che ci voglia un delay
+    # importante prima di leggere.
+    #
+    # ci va bene che questo avviene soltanto alla device discovery
+    # è una brutta soluzione (io sistemerei il firmware del SR250), ma funziona
+    time.sleep(3)
+    res = ser.read_all()
 
     if res != b'':
-        name = res.strip(b'\n\r').decode('ascii', errors='ignore')
+        name = res.decode('ascii', errors='ignore').splitlines()[-1].strip('\n\r')
 
         # Per le ragioni specificate sopra, restituisco anche l'oggetto seriale
         # così da non riaprire la comunicazione causando ulteriori reset
