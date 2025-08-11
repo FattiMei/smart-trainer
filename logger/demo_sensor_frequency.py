@@ -1,6 +1,7 @@
 import time
 import serial
 import numpy as np
+import argparse
 import threading
 import matplotlib.pyplot as plt
 
@@ -55,11 +56,20 @@ class Sensor:
         assert(len(self.STOP_MESSAGE) == bytes_written)
 
 
-WINDOW_SIZE_SECONDS = 4
 COLORS = ['red', 'green', 'blue', 'orange']
 
 
+def parse_window_size(default_window_size: float = 4.0):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--size', type=float, help='Size of the sampling window in seconds')
+
+    args = parser.parse_args()
+
+    return args.size if args.size is not None else default_window_size
+
+
 if __name__ == '__main__':
+    WINDOW_SIZE_SECONDS = parse_window_size()
     com = scan_for_devices()
     sensors = []
 
