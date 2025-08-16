@@ -1,5 +1,5 @@
 import argparse
-from devscan import scan_for_devices
+from devscan import scan_for_devices, scan_for_devices_mt
 
 
 DEFAULT_WINDOW_SIZE_SECONDS = 15.0
@@ -37,10 +37,12 @@ def assemble_experiment_name(window_parameters):
 
 if __name__ == '__main__':
     window_parameters = parse_window_parameters()
-    available_devices = list(scan_for_devices())
+    available_devices = list(scan_for_devices_mt())
 
     if available_devices != []:
         print('Devices found:')
 
         for device in available_devices:
             print(f'  * {device.name} at {device.port}')
+    else:
+        print('No compatible device found')

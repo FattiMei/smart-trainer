@@ -3,6 +3,8 @@ import serial
 from serial.tools import list_ports
 from dataclasses import dataclass
 
+import threading
+
 
 @dataclass
 class Device:
@@ -69,13 +71,33 @@ def scan_for_devices():
 
 def scan_for_devices_mt():
     ''' multithreaded version of `scan_for_devices`'''
+    def perform_handshake_wrapper(results_list: list, port: str):
+        # per quanto ne sappia non si possono catturare i valori di ritorno
+        # quando si usano i `threading.Thread`s. Per questo li faccio uscire
+        # tramite una struttura mutevole come una lista
+        device = perform_handshake(port)
+
+        if device is not None:
+            # questo potrebbe avere una race condition perché più thread
+            # concorrenti vogliono aggiungere tutti un elemento alla lista
+            #
+            # non dovrebbe essere un problema perché l'interprete esegue sempre
+            # un thread alla volta
+            results_list.append(device)
+
     devices = []
-    threads = []
+    threads = [
+        threading.Thread(
+            target=perform_handshake_wrapper,
+            args=(devices, com_port.device)
+        )
+        for com_port in list_ports.comports()
+    ]
 
-    for com_port in list_ports.comports():
-        dev = perform_handshake(com_port.device)
+    for t in threads:
+        t.start()
 
-        if dev is not None:
-            devices.append(dev)
+    for t in threads:
+        t.join()
 
     return devices
