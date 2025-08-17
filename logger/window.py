@@ -3,9 +3,9 @@ import numpy as np
 
 
 class SlidingWindow:
-    def __init__(self, window_size_seconds: float):
+    def __init__(self, seconds: float):
         self.start_time = None
-        self.window_size_seconds = window_size_seconds
+        self.seconds = seconds
 
         # e potrebbe anche essere una struttura dati
         # più specializzata
@@ -20,7 +20,7 @@ class SlidingWindow:
         self.dataq.append(data)
 
         if len(self.timeq) > 2:
-            if timestamp-self.timeq[1] >= self.window_size_seconds:
+            if timestamp-self.timeq[1] >= self.seconds:
                 self.timeq.pop(0)
                 self.dataq.pop(0)
 
@@ -38,14 +38,14 @@ class SlidingWindow:
 
 class TestSlidingWindow(unittest.TestCase):
     def test_push_from_empty(self):
-        win = SlidingWindow(window_size_seconds=3)
+        win = SlidingWindow(3.0)
         win.push(0, 1)
 
         self.assertTrue(win.timeq == [0])
         self.assertTrue(win.dataq == [1])
 
     def test_push_many_things(self):
-        win = SlidingWindow(window_size_seconds=3)
+        win = SlidingWindow(3.0)
 
         NSAMPLES = 20
         for t in np.linspace(0,1,num=NSAMPLES):
