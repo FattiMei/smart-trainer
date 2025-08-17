@@ -25,9 +25,18 @@ class AbstractSensor:
         self.state = CollectionState.WAIT
         self.backgroud_thread = threading.Thread(target=self._run)
 
-    def start_collection(self):
+    # è necessario dare una reference di tempo esterna perché nel caso
+    # in cui si facciano partire più sensori i sistemi di riferimento
+    # devono essere allineati.
+    #
+    # nel caso in cui ogni sensore usi il proprio sistema di riferimento
+    # i dati potrebbero essere sfasati di qualche millisecondo, giusto
+    # il tempo di eseguire la funzione `start_collection`. Stiamo parlando
+    # di millisecondi, è assolutamente irrilevante ai nostri scopi, però
+    # è importante fare questo ragionamento
+    def start_collection(self, start_time):
         assert(self.state == CollectionState.WAIT)
-        self.start_time = time.perf_counter()
+        self.start_time = start_time
         self.state = CollectionState.START
         self.backgroud_thread.start()
 

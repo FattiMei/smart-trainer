@@ -16,13 +16,13 @@ class SimulatedLineSensor(AbstractSensor):
         self.line = ax.plot([], [], marker='o')[0]
 
     def update_visualization(self, t: float):
-        # TODO: cambiare questa logica, non mi piace.
-        t = t - self.window.seconds
-
-        if t < 0:
-            t = 0
-
-        self.ax.set_xlim((t, t + self.window.seconds))
+        # in questo caso `t` è il wall-time esterno
+        deltat = np.clip(
+            t - self.start_time - self.window.seconds,
+            0.0,
+            np.inf
+        )
+        self.ax.set_xlim((deltat, deltat + self.window.seconds))
 
         return self.line
 
@@ -52,12 +52,20 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(1)
 
     sensor = SimulatedLineSensor(3.0, ax)
-    sensor.start_collection()
+    sensor.start_collection(time.perf_counter())
 
     def update(frame):
-        t = frame * FRAME_TIME_SECONDS
-        return sensor.update_visualization(t)
+        # usando il tempo esatto, anziché il tempo ricavato dall'indice di frame
+        # rendiamo lo scorrimento della finestra indipendente dal carico di lavoro
+        # durante il frame. Questo significa che non avremo delle belle gif della
+        # animazione, amen
+        return sensor.update_visualization(time.perf_counter())
 
+    # da analisi preliminari sembra che non sia possibile fare a meno della animation
+    # per aggiornare in real time un grafico matplotlib
+    #
+    # questo rende più difficoltosa l'esplorazione della libreria vispy perché bisognerà
+    # riscrivere più parti del programma
     ani = animation.FuncAnimation(
         fig=fig,
         func=update,
