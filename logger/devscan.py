@@ -27,21 +27,28 @@ async def perform_handshake(port: str) -> Device:
     # causa un reset della scheda che la rende irrangiungibile per
     # un paio di secondi
     await asyncio.sleep(3)
+
     writer.write(INFO_MESSAGE)
     await writer.drain()
+
+    # il sensore SR250_ESP32 risponde al comando INFO con due linee:
+    #   * "I (%d) uwb_session: INFO command received"
+    #   * "SR250_ESP32"
+    #
+    # per includere questa eccezione (non sapendo a priori il device dalla porta)
+    # implemento la soluzione sotto
     response = await reader.readline()
+    if b'uwb_session: INFO command received' in response:
+        response = await reader.readline()
 
-    if len(response) > 0:
-        name = response.decode('ascii', errors='ignore').strip('\n\r')
-        return Device(name, port, reader, writer)
+    name = response.decode('ascii', errors='ignore').strip('\n\r')
 
-    else:
-        return None
+    return Device(name, port, reader, writer)
 
 
-# questa funzione dovrebbe essere più sofisticata. Ci potrebbero essere
-# dei task che per via di errori aspettano una lettura che non arriverà mai.
-# per questo bisogna produrre questi task e dargli un timeout.
+# TODO: implementare la logica per killare un task dato un timeout
+# un task potrebbe bloccarsi quando un device non implementando il protocollo
+# non risponde a INFO_MESSAGE
 async def scan_for_devices() -> list[Device]:
     results = await asyncio.gather(
         *(
