@@ -28,6 +28,8 @@ async def perform_handshake(port: str) -> Device:
     # un paio di secondi
     await asyncio.sleep(3)
 
+    # questo è il protocollo legacy. Non possiamo modificarlo perché
+    # non sappiamo modificare il firmware delle schede ESP32
     writer.write(INFO_MESSAGE)
     await writer.drain()
 
@@ -35,7 +37,7 @@ async def perform_handshake(port: str) -> Device:
     #   * "I (%d) uwb_session: INFO command received"
     #   * "SR250_ESP32"
     #
-    # per includere questa eccezione (non sapendo a priori il device dalla porta)
+    # per includere questa eccezione (non sapendo distinguere a priori il device dalla porta)
     # implemento la soluzione sotto
     response = await reader.readline()
     if b'uwb_session: INFO command received' in response:
@@ -46,19 +48,29 @@ async def perform_handshake(port: str) -> Device:
     return Device(name, port, reader, writer)
 
 
-# TODO: implementare la logica per killare un task dato un timeout
-# un task potrebbe bloccarsi quando un device non implementando il protocollo
-# non risponde a INFO_MESSAGE
-async def scan_for_devices() -> list[Device]:
+async def perform_handshake_with_timeout(port: str, timeout_seconds):
+    device = None
+
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            device = await perform_handshake(port)
+    except TimeoutError:
+        print(f'[WARNING]: unusual wait at port {port}')
+
+    return device
+
+
+async def scan_for_devices(timeout_seconds: float = 4.0) -> list[Device]:
     results = await asyncio.gather(
         *(
-            perform_handshake(com_port.device)
+            perform_handshake_with_timeout(port=com_port.device, timeout_seconds=5.0)
             for com_port in list_ports.comports()
         )
     )
  
-    return [
-        device
-        for device in results
-        if device is not None
-    ]
+    return list(
+        filter(
+            lambda x: x is not None,
+            results
+        )
+    )

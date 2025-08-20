@@ -1,3 +1,4 @@
+import time
 import asyncio
 import argparse
 from devscan import scan_for_devices
@@ -32,19 +33,18 @@ def parse_window_parameters(default_window_size_seconds: float = DEFAULT_WINDOW_
     return args
 
 
-def assemble_experiment_name(window_parameters):
-    pass
+async def main():
+    window_parameters = parse_window_parameters()
+    available_devices = await scan_for_devices()
+
+    if available_devices == []:
+        print('No compatible device found')
+        exit()
+
+    print('Devices found:')
+    for device in available_devices:
+        print(f'  * {device.name} at {device.port}')
 
 
 if __name__ == '__main__':
-    window_parameters = parse_window_parameters()
-    available_devices = asyncio.run(scan_for_devices())
-
-    if available_devices != []:
-        print('Devices found:')
-
-        for device in available_devices:
-            print(f'  * {device.name} at {device.port}')
-    else:
-        print('No compatible device found')
-        exit()
+    asyncio.run(main())
