@@ -2,9 +2,12 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 
-from time import perf_counter
-from devscan import scan_for_devices_mt
+import asyncio
+from devscan import scan_for_devices
 from sensor import SerialSensor
+
+
+COLORS = ['red', 'green', 'blue', 'orange']
 
 
 class DummySerialSensor(SerialSensor):
@@ -12,35 +15,36 @@ class DummySerialSensor(SerialSensor):
         return None
 
 
-COLORS = ['red', 'green', 'blue', 'orange']
-
-
-if __name__ == '__main__':
+async def main():
     window_size_seconds = 10.0
-    available_devices = list(scan_for_devices_mt())
+    available_devices = await scan_for_devices()
 
-    if available_devices != []:
-        print('Devices found:')
-
-        for device in available_devices:
-            print(f'  * {device.name} at {device.port}')
-    else:
+    if available_devices == []:
         print('No compatible device found')
         exit()
 
-    sensors = [DummySerialSensor(device) for device in available_devices]
-    now = time.perf_counter()
+    print('Devices found:')
+    for device in available_devices:
+        print(f'  * {device.name} at {device.port}')
+
+    sensors = [
+        DummySerialSensor(device)
+        for device in available_devices
+    ]
 
     print(f'Begin sampling window of {window_size_seconds} seconds')
-    for sensor in sensors:
-        sensor.start_collection(now)
-
-    time.sleep(window_size_seconds)
-
-    for sensor in sensors:
-        sensor.stop_collection()
-
+    start_time = time.perf_counter()
+    await asyncio.gather(
+        *(
+            sensor.start_collection(
+                start_time=start_time,
+                window_duration_seconds=window_size_seconds
+            )
+            for sensor in sensors
+        )
+    )
     print('Collection completed')
+
     for i, sensor in enumerate(sensors):
         plt.eventplot(
             sensor.timestamps,
@@ -53,3 +57,7 @@ if __name__ == '__main__':
     plt.title("Sensor measurements arrival time")
     plt.legend()
     plt.show()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

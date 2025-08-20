@@ -1,7 +1,7 @@
 import time
 import serial
+import asyncio
 import numpy as np
-import threading
 
 from enum import Enum
 from devscan import Device
@@ -16,22 +16,27 @@ class CollectionState(Enum):
 
 
 class AbstractSensor:
-    def __init__(self):
-        self.state = CollectionState.WAIT
-        self.backgroud_thread = threading.Thread(target=self._run)
-
-    def start_collection(self, start_time):
-        assert(self.state == CollectionState.WAIT)
+    async def start_collection(self, start_time: float, window_duration_seconds: float):
         self.start_time = start_time
-        self.state = CollectionState.START
-        self.backgroud_thread.start()
 
-    def stop_collection(self):
-        assert(self.state == CollectionState.READ)
-        self.state = CollectionState.STOP
-        self.backgroud_thread.join()
+        # per il momento uso il meccanismo delle exceptions
+        # per terminare preventivamente la task `self._run()`
+        # che altrimenti girerebbe all'infinito
+        #
+        # quindi la gestione della finestra è delegata ai
+        # singoli sensori, anche se sono comuni nel comportamento
+        try:
+            async with asyncio.timeout(window_duration_seconds):
+                await self._run()
+        except TimeoutError:
+            pass
 
-    def _run(self):
+        await self.stop_collection()
+
+    async def stop_collection(self):
+        raise NotImplementedError
+
+    async def _run(self):
         raise NotImplementedError
 
 
@@ -47,7 +52,12 @@ class SerialSensor(AbstractSensor):
         self.frames = []
         self.device = device
 
-    def _read_raw_frame(self) -> tuple[float, np.ndarray]:
+    async def stop_collection(self):
+        self.device.writer.write(SerialSensor.STOP_MESSAGE)
+        await self.device.writer.drain()
+
+    # valutare di usare i futures per gestire il valore di ritorno
+    async def _read_raw_frame(self) -> tuple[float, np.ndarray]:
         raw_frame_bytes = []
         found_begin_command = False
         found_end_command = True
@@ -55,13 +65,20 @@ class SerialSensor(AbstractSensor):
         # questo per integrare il sensore SR250_ESP32 che al comando 'START'
         # risponde con una linea prima di iniziare con 'BEGIN'
         while not found_begin_command:
-            message = self.device.serial_obj.readline().strip(b'\n\r')
+            raw_message = await self.device.reader.readline()
+            message = raw_message.strip(b'\n\r')
+
+            # questo ciclo potrebbe non terminare mai: in caso di mancata lettura
+            # il flusso di questa corutine è bloccato in un `await`.
+            # questo significa che restituisco il controllo all'event loop che ha
+            # la facoltà di killare completamente la task `self._run()` (che ha
+            # a sua volta chiamato questa coroutine)
             found_begin_command = (message == SerialSensor.BEGIN_MESSAGE)
 
         timestamp = time.perf_counter() - self.start_time
 
         while not found_end_command:
-            data = self.device.serial_obj.readline()
+            data = await self.device.reader.readline()
             possible_end = data.strip(b'\n\r')
 
             if data.strip(b'\n\r') == SerialSensor.END_MESSAGE:
@@ -74,21 +91,21 @@ class SerialSensor(AbstractSensor):
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
-    def _run(self):
-        while self.state != CollectionState.STOP:
-            if self.state == CollectionState.WAIT:
-                assert(False)
+    # qui mi lascerei la possibilità che una task esterna possa interrompere il ciclo
+    # e triggerare il comando di STOP
+    async def _run(self):
+        state = CollectionState.START
 
-            elif self.state == CollectionState.START:
-                self.state = CollectionState.READ
-                self.device.serial_obj.write(SerialSensor.START_MESSAGE)
+        while state != CollectionState.STOP:
+            if state == CollectionState.START:
+                self.device.writer.write(SerialSensor.START_MESSAGE)
+                await self.device.writer.drain()
 
-            elif self.state == CollectionState.READ:
-                timestamp, raw_frame = self._read_raw_frame()
+                state = CollectionState.READ
+
+            elif state == CollectionState.READ:
+                timestamp, raw_frame = await self._read_raw_frame()
                 frame = self._interpret_raw_frame(raw_frame)
 
                 self.timestamps.append(timestamp)
                 self.frames.append(frame)
-
-        assert(self.state == CollectionState.STOP)
-        self.device.serial_obj.write(SerialSensor.STOP_MESSAGE)
