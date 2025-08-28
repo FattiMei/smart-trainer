@@ -16,8 +16,12 @@ class CollectionState(Enum):
 
 
 class AbstractSensor:
+    def __init__(self):
+        self.state = CollectionState.WAIT
+
     async def start_collection(self, start_time: float, window_duration_seconds: float):
         self.start_time = start_time
+        self.state = CollectionState.START
 
         # per il momento uso il meccanismo delle exceptions
         # per terminare preventivamente la task `self._run()`
@@ -94,16 +98,14 @@ class SerialSensor(AbstractSensor):
     # qui mi lascerei la possibilità che una task esterna possa interrompere il ciclo
     # e triggerare il comando di STOP
     async def _run(self):
-        state = CollectionState.START
-
-        while state != CollectionState.STOP:
-            if state == CollectionState.START:
+        while self.state != CollectionState.STOP:
+            if self.state == CollectionState.START:
                 self.device.writer.write(SerialSensor.START_MESSAGE)
                 await self.device.writer.drain()
 
-                state = CollectionState.READ
+                self.state = CollectionState.READ
 
-            elif state == CollectionState.READ:
+            elif self.state == CollectionState.READ:
                 timestamp, raw_frame = await self._read_raw_frame()
                 frame = self._interpret_raw_frame(raw_frame)
 

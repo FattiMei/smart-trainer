@@ -60,17 +60,12 @@ async def perform_handshake_with_timeout(port: str, timeout_seconds):
     return device
 
 
-async def scan_for_devices(timeout_seconds: float = 4.0) -> list[Device]:
+async def scan_for_devices(timeout_seconds: float = 5.0) -> list[Device]:
     results = await asyncio.gather(
         *(
-            perform_handshake_with_timeout(port=com_port.device, timeout_seconds=5.0)
+            perform_handshake_with_timeout(com_port.device, timeout_seconds)
             for com_port in list_ports.comports()
         )
     )
  
-    return list(
-        filter(
-            lambda x: x is not None,
-            results
-        )
-    )
+    return [dev for dev in results if dev is not None]
