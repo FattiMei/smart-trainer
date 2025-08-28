@@ -6,6 +6,7 @@ pyftpdlib==2.0.0
 pyqtgraph==0.13.7
 sounddevice==0.5.1
 pyserial
+pyserial-asyncio
 PyQt5
 vispy
 

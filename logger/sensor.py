@@ -1,149 +1,113 @@
+import time
 import serial
+import asyncio
 import numpy as np
-from time import perf_counter
+
+from enum import Enum
 from devscan import Device
-
-from abc import ABC, abstractmethod
-from collections import namedtuple
-
-from pyqtgraph.Qt.QtCore import QThread, pyqtSignal
-from vispy.scene import visuals
+from window import SlidingWindow
 
 
-SensorMeasurement = namedtuple(
-    'SensorMeasurement',
-    [
-        'timestamps',
-        'frames'
-    ]
-)
+class CollectionState(Enum):
+    WAIT  = 0
+    START = 1
+    READ  = 2
+    STOP  = 3
 
 
-def sensor_factory(name: str):
-    if name == 'Infineon_ESP32':
-        return InfineonSensor
+class AbstractSensor:
+    def __init__(self):
+        self.state = CollectionState.WAIT
 
-    elif name == 'SR250_ESP32':
-        return SR250Sensor
+    async def start_collection(self, start_time: float, window_duration_seconds: float):
+        self.start_time = start_time
+        self.state = CollectionState.START
 
-    else:
-        return None
+        # per il momento uso il meccanismo delle exceptions
+        # per terminare preventivamente la task `self._run()`
+        # che altrimenti girerebbe all'infinito
+        #
+        # quindi la gestione della finestra è delegata ai
+        # singoli sensori, anche se sono comuni nel comportamento
+        try:
+            async with asyncio.timeout(window_duration_seconds):
+                await self._run()
+        except TimeoutError:
+            pass
+
+        await self.stop_collection()
+
+    async def stop_collection(self):
+        raise NotImplementedError
+
+    async def _run(self):
+        raise NotImplementedError
 
 
-# ho deciso di misurare contemporaneamente i frame e il timestamp
-# dei frame così da produrre un dato primitivo compatibile sia
-# con le misure radar sia con le misure asincrone degli altri sensori
-class SensorReader(QThread):
-    def __init__(self, device: Device, view=None):
+class SerialSensor(AbstractSensor):
+    START_MESSAGE = b'START'
+    STOP_MESSAGE  = b'STOP'
+    BEGIN_MESSAGE = b'BEGIN'
+    END_MESSAGE   = b'END'
+
+    def __init__(self, device: Device):
         super().__init__()
-        self.ser = serial.Serial(device.port, timeout=1)
         self.timestamps = []
         self.frames = []
-        self.running = True
-        self.view = view
+        self.device = device
 
-        self.responds_after_start = False
+    async def stop_collection(self):
+        self.device.writer.write(SerialSensor.STOP_MESSAGE)
+        await self.device.writer.drain()
 
-    def read_frame(self) -> np.ndarray:
-        raw_frame = np.empty(0, dtype=np.uint8)
+    # valutare di usare i futures per gestire il valore di ritorno
+    async def _read_raw_frame(self) -> tuple[float, np.ndarray]:
+        raw_frame_bytes = []
+        found_begin_command = False
+        found_end_command = True
 
-        line = self.ser.readline()
-        assert(line == b'BEGIN\n')
+        # questo per integrare il sensore SR250_ESP32 che al comando 'START'
+        # risponde con una linea prima di iniziare con 'BEGIN'
+        while not found_begin_command:
+            raw_message = await self.device.reader.readline()
+            message = raw_message.strip(b'\n\r')
 
-        while True:
-            line = self.ser.readline()
+            # questo ciclo potrebbe non terminare mai: in caso di mancata lettura
+            # il flusso di questa corutine è bloccato in un `await`.
+            # questo significa che restituisco il controllo all'event loop che ha
+            # la facoltà di killare completamente la task `self._run()` (che ha
+            # a sua volta chiamato questa coroutine)
+            found_begin_command = (message == SerialSensor.BEGIN_MESSAGE)
 
-            if line == b'END\n':
-                break
+        timestamp = time.perf_counter() - self.start_time
+
+        while not found_end_command:
+            data = await self.device.reader.readline()
+            possible_end = data.strip(b'\n\r')
+
+            if data.strip(b'\n\r') == SerialSensor.END_MESSAGE:
+                found_end_command = True
             else:
-                raw_frame = np.concatenate([
-                    raw_frame,
-                    np.frombuffer(line, dtype=np.uint8)
-                ])
+                raw_frame_bytes.append(data)
 
-        return raw_frame
+        return timestamp, np.array(b''.join(raw_frame_bytes))
 
-    @abstractmethod
-    def process_frame(self, raw_frame: np.ndarray) -> np.ndarray:
-        pass
+    def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
 
-    def run(self):
-        self.ser.write(b'START')
+    # qui mi lascerei la possibilità che una task esterna possa interrompere il ciclo
+    # e triggerare il comando di STOP
+    async def _run(self):
+        while self.state != CollectionState.STOP:
+            if self.state == CollectionState.START:
+                self.device.writer.write(SerialSensor.START_MESSAGE)
+                await self.device.writer.drain()
 
-        if self.responds_after_start:
-            _ = self.ser.readline()
+                self.state = CollectionState.READ
 
-        while self.running:
-            self.timestamps.append(perf_counter())
-            raw_frame = self.read_frame()
-            processed_frame = self.process_frame(raw_frame)
-            self.frames.append(processed_frame)
+            elif self.state == CollectionState.READ:
+                timestamp, raw_frame = await self._read_raw_frame()
+                frame = self._interpret_raw_frame(raw_frame)
 
-        self.ser.write(b'STOP')
-
-    # il sensore non decide mai quando terminare l'acquisizione
-    def stop(self):
-        self.running = False
-
-
-    def get_measurements(self) -> SensorMeasurement:
-        assert(self.running == False)
-
-        return SensorMeasurement(
-            timestamps=np.array(self.timestamps),
-            frames=np.array(self.frames)
-        )
-
-
-class InfineonSensor(SensorReader):
-    def __init__(self, device: Device, view):
-        super().__init__(device, view)
-        self.num_ant = 3
-        self.num_chirps = 4
-        self.samples_per_chirp = 128
-
-    def process_frame(self, raw_frame: np.ndarray) -> np.ndarray:
-        # probably the last byte is a newline
-        view = raw_frame[:-1].view(np.int16)
-
-        return view.reshape(
-            self.num_ant,
-            self.num_chirps,
-            self.samples_per_chirp
-        )
-
-
-class SR250Sensor(SensorReader):
-    def __init__(self, device: Device, view):
-        super().__init__(device, view)
-        self.taps = 128
-        self.range_bins = 120
-        self.num_ant = 3
-        self.bytes_per_cir = self.taps * 4 *self.num_ant
-        self.len_antenna = self.taps*2
-        self.window_length = 100
-
-        self.image = visuals.Image(
-            np.zeros((self.window_length, self.range_bins)),
-            texture_format='auto',
-            parent = self.view.scene
-        )
-
-        self.responds_after_start = True
-
-
-    def process_frame(self, raw_frame: np.ndarray) -> np.ndarray:
-        view = raw_frame[:-1].view(np.int16).reshape(self.num_ant, -1)
-
-        # for every antenna, removes the first 16 bytes
-        # this is probably the time stamp of the measurement but I don't know.
-        # this info is obtained by reverse engineering the original logger
-        cir_casted_int16 = view[:, 16:].reshape(
-            self.num_ant,
-            -1,
-            2 # stands for real and imaginary part
-        )
-
-        cir_complex = cir_casted_int16[:,:,0] + 1j*cir_casted_int16[:,:,1]
-
-        return cir_complex.astype(np.complex64)
+                self.timestamps.append(timestamp)
+                self.frames.append(frame)
