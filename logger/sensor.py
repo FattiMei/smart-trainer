@@ -1,5 +1,6 @@
 import time
 import serial
+import serial_asyncio
 import asyncio
 import numpy as np
 
@@ -17,30 +18,9 @@ class CollectionState(Enum):
 
 class AbstractSensor:
     def __init__(self):
-        self.state = CollectionState.WAIT
+        pass
 
-    async def start_collection(self, start_time: float, window_duration_seconds: float):
-        self.start_time = start_time
-        self.state = CollectionState.START
-
-        # per il momento uso il meccanismo delle exceptions
-        # per terminare preventivamente la task `self._run()`
-        # che altrimenti girerebbe all'infinito
-        #
-        # quindi la gestione della finestra è delegata ai
-        # singoli sensori, anche se sono comuni nel comportamento
-        try:
-            async with asyncio.timeout(window_duration_seconds):
-                await self._run()
-        except TimeoutError:
-            pass
-
-        await self.stop_collection()
-
-    async def stop_collection(self):
-        raise NotImplementedError
-
-    async def _run(self):
+    async def collect(self, start_time: float, duration_seconds: float):
         raise NotImplementedError
 
 
@@ -50,17 +30,49 @@ class SerialSensor(AbstractSensor):
     BEGIN_MESSAGE = b'BEGIN'
     END_MESSAGE   = b'END'
 
-    def __init__(self, device: Device):
+    def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0):
         super().__init__()
         self.timestamps = []
         self.frames = []
         self.device = device
+        self.window = SlidingWindow(sliding_window_duration_seconds)
 
-    async def stop_collection(self):
-        self.device.writer.write(SerialSensor.STOP_MESSAGE)
-        await self.device.writer.drain()
+        self.start_time = None
 
-    # valutare di usare i futures per gestire il valore di ritorno
+    async def collect(self, start_time: float, duration_seconds: float):
+        self.start_time = start_time
+        state = CollectionState.START
+
+        try:
+            async with asyncio.timeout(duration_seconds):
+                while True:
+                    if state == CollectionState.START:
+                        self.device.writer.write(SerialSensor.START_MESSAGE)
+                        await self.device.writer.drain()
+
+                        state = CollectionState.READ
+
+                    elif state == CollectionState.READ:
+                        timestamp, raw_frame = await self._read_raw_frame()
+                        frame = self._interpret_raw_frame(raw_frame)
+
+                        self.timestamps.append(timestamp)
+                        self.frames.append(frame)
+
+                        self.window.push(timestamp, frame)
+                        self.update_visualization_data((
+                            self.window.timeq,
+                            self.window.dataq
+                        ))
+
+                    elif state == CollectionState.STOP:
+                        break
+
+        except (TimeoutError, asyncio.CancelledError):
+            self.device.writer.write(SerialSensor.STOP_MESSAGE)
+            await self.device.writer.drain()
+            print(f'Sensor collection terminated for {self.device.name}')
+
     async def _read_raw_frame(self) -> tuple[float, np.ndarray]:
         raw_frame_bytes = []
         found_begin_command = False
@@ -75,7 +87,7 @@ class SerialSensor(AbstractSensor):
             # questo ciclo potrebbe non terminare mai: in caso di mancata lettura
             # il flusso di questa corutine è bloccato in un `await`.
             # questo significa che restituisco il controllo all'event loop che ha
-            # la facoltà di killare completamente la task `self._run()` (che ha
+            # la facoltà di killare completamente la task `self.collect()` (che ha
             # a sua volta chiamato questa coroutine)
             found_begin_command = (message == SerialSensor.BEGIN_MESSAGE)
 
@@ -95,19 +107,44 @@ class SerialSensor(AbstractSensor):
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
-    # qui mi lascerei la possibilità che una task esterna possa interrompere il ciclo
-    # e triggerare il comando di STOP
-    async def _run(self):
-        while self.state != CollectionState.STOP:
-            if self.state == CollectionState.START:
-                self.device.writer.write(SerialSensor.START_MESSAGE)
-                await self.device.writer.drain()
+    def init_visualization(self, ax):
+        raise NotImplementedError
 
-                self.state = CollectionState.READ
+    def update_visualization(self, t: float):
+        raise NotImplementedError
 
-            elif self.state == CollectionState.READ:
-                timestamp, raw_frame = await self._read_raw_frame()
-                frame = self._interpret_raw_frame(raw_frame)
+    def update_visualization_data(self, data):
+        raise NotImplementedError
 
-                self.timestamps.append(timestamp)
-                self.frames.append(frame)
+
+class ArduinoAnalogSensor(SerialSensor):
+    def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0, maxval: float = 1024.0):
+        self.maxval = maxval
+        super().__init__(device, sliding_window_duration_seconds)
+
+    def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
+        # interpreta i byte come se fossero stringhe
+        return np.array([100])
+
+    def init_visualization(self, ax):
+        ax.set_title('Arduino analog sensor')
+        ax.set_xlim((0.0, self.window.seconds))
+        ax.set_ylim((0, self.maxval))
+
+        self.line = ax.plot([], [], marker='o')[0]
+        self.ax = ax
+
+    def update_visualization(self, t: float):
+        if self.start_time is not None:
+            deltat = np.clip(
+                t - self.start_time - self.window.seconds,
+                0.0,
+                np.inf
+            )
+            self.ax.set_xlim((deltat, deltat + self.window.seconds))
+
+        return self.line
+
+    def update_visualization_data(self, data):
+        self.line.set_xdata(data[0])
+        self.line.set_ydata(data[1])
