@@ -54,6 +54,8 @@ class SerialSensor(AbstractSensor):
 
                     elif state == CollectionState.READ:
                         timestamp, raw_frame = await self._read_raw_frame()
+
+                        assert(raw_frame.size > 0)
                         frame = self._interpret_raw_frame(raw_frame)
 
                         self.timestamps.append(timestamp)
@@ -103,10 +105,8 @@ class SerialSensor(AbstractSensor):
                 raw_frame_bytes.append(data)
 
         raw_frame = b''.join(raw_frame_bytes)
-        if raw_frame[-1] == b'\n':
-            raw_frame = raw_frame[:-1]
 
-        return timestamp, np.array(raw_frame)
+        return timestamp, np.frombuffer(raw_frame, dtype=np.uint8)
 
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
         raise NotImplementedError
@@ -128,7 +128,7 @@ class ArduinoAnalogSensor(SerialSensor):
 
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
         return np.array([
-            int(raw_frame.tobytes())
+            int(raw_frame[:-1].tobytes())
         ])
 
     def init_visualization(self, ax):
@@ -188,3 +188,64 @@ class ArduinoHeartbeatSensor(SerialSensor):
 
     def update_visualization_data(self, data):
         self.eventplot.set_positions(list(data[0]))
+
+
+class InfineonSensor(SerialSensor):
+    def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0):
+        super().__init__(device, sliding_window_duration_seconds)
+        self.num_ant = 3
+        self.num_chirps = 4
+        self.samples_per_chirp = 128
+        self.bytes_per_cir = self.samples_per_chirp * self.num_chirps *self.num_ant * 2
+
+    def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
+        # probably the last byte is a newline
+        return raw_frame[:-1].view(np.int16).reshape(
+            self.num_ant,
+            self.num_chirps,
+            self.samples_per_chirp
+        )
+
+    def init_visualization(self, ax):
+        pass
+
+    def update_visualization(self, t: float):
+        return None
+
+    def update_visualization_data(self, data):
+        pass
+
+
+class SR250Sensor(SerialSensor):
+    def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0):
+        super().__init__(device, sliding_window_duration_seconds)
+        self.taps = 128
+        self.range_bins = 120
+        self.num_ant = 3
+        self.bytes_per_cir = self.taps * 4 *self.num_ant
+        self.len_antenna = self.taps*2
+
+    def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
+        view = raw_frame[:-1].view(np.int16).reshape(self.num_ant, -1)
+
+        # for every antenna, removes the first 16 bytes
+        # this is probably the time stamp of the measurement but I don't know.
+        # this info is obtained by reverse engineering the original logger
+        cir_casted_int16 = view[:, 16:].reshape(
+            self.num_ant,
+            -1, # will be the number of bins
+            2 # stands for real and imaginary part
+        )
+
+        cir_complex = cir_casted_int16[:,:,0] + 1j*cir_casted_int16[:,:,1]
+
+        return cir_complex.astype(np.complex64)
+
+    def init_visualization(self, ax):
+        pass
+
+    def update_visualization(self, t: float):
+        pass
+
+    def update_visualization_data(self, data):
+        pass

@@ -1,3 +1,4 @@
+import numpy as np
 import time
 import asyncio
 import argparse
@@ -48,6 +49,12 @@ def sensor_factory(device_name: str):
     elif device_name.startswith('Arduino_heartbeat'):
         return sensor.ArduinoHeartbeatSensor
 
+    elif device_name == 'SR250_ESP32':
+        return sensor.SR250Sensor
+
+    elif device_name.startswith('Infineon'):
+        return sensor.InfineonSensor
+
     else:
         return None
 
@@ -64,6 +71,7 @@ def run_asyncio(sensors, collection_tasks, sensor_ready_event: threading.Event, 
         if len(sensors) == 0:
             return
 
+        # TODO: è un problema quando collect prima di init_visualization
         start_time = time.perf_counter()
 
         for sensor in sensors:
@@ -123,7 +131,7 @@ if __name__ == '__main__':
         for sensor in sensors:
             print(f'  * {sensor.device.name} at {sensor.device.port}')
 
-    fig, axes = plt.subplots(1, len(sensors))
+    fig, axes = plt.subplots(len(sensors), 1)
 
     if len(sensors) > 1:
         for i, ax in enumerate(axes):
@@ -153,3 +161,6 @@ if __name__ == '__main__':
     )
     plt.show()
     background_thread.join()
+
+    print(len(sensors[0].frames))
+    print(sensors[0].frames)
