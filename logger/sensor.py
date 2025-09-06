@@ -153,3 +153,38 @@ class ArduinoAnalogSensor(SerialSensor):
     def update_visualization_data(self, data):
         self.line.set_xdata(data[0])
         self.line.set_ydata(data[1])
+
+
+# per questo tipo di sensore voglio un grafico `plt.eventplot`
+class ArduinoHeartbeatSensor(SerialSensor):
+    def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0):
+        super().__init__(device, sliding_window_duration_seconds)
+
+    def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
+        return np.array([
+            int(raw_frame.tobytes()) > 0
+        ])
+
+    def init_visualization(self, ax):
+        ax.set_title('Heartbeat detection')
+        self.eventplot, = ax.eventplot(
+            [],
+            orientation='horizontal',
+            lineoffsets=[0.5],
+            colors=['red']
+        )
+        self.ax = ax
+
+    def update_visualization(self, t: float):
+        if self.start_time is not None:
+            deltat = np.clip(
+                t - self.start_time - self.window.seconds,
+                0.0,
+                np.inf
+            )
+            self.ax.set_xlim((deltat, deltat + self.window.seconds))
+
+        return self.eventplot
+
+    def update_visualization_data(self, data):
+        self.eventplot.set_positions(list(data[0]))

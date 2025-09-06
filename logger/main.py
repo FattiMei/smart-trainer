@@ -44,6 +44,10 @@ def parse_window_parameters(default_window_size_seconds: float = DEFAULT_WINDOW_
 def sensor_factory(device_name: str):
     if device_name == 'Arduino_analog':
         return sensor.ArduinoAnalogSensor
+
+    elif device_name.startswith('Arduino_heartbeat'):
+        return sensor.ArduinoHeartbeatSensor
+
     else:
         return None
 
@@ -53,7 +57,7 @@ def run_asyncio(sensors, collection_tasks, sensor_ready_event: threading.Event, 
         print('Begin device discovery')
         available_devices = await scan_for_devices()
         for device in available_devices:
-            sensor_type = sensor_factory[device.name]
+            sensor_type = sensor_factory(device.name)
             sensors.append(sensor_type(device))
         sensor_ready_event.set()
 
