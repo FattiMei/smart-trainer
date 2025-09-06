@@ -76,7 +76,7 @@ class SerialSensor(AbstractSensor):
     async def _read_raw_frame(self) -> tuple[float, np.ndarray]:
         raw_frame_bytes = []
         found_begin_command = False
-        found_end_command = True
+        found_end_command = False
 
         # questo per integrare il sensore SR250_ESP32 che al comando 'START'
         # risponde con una linea prima di iniziare con 'BEGIN'
@@ -102,7 +102,11 @@ class SerialSensor(AbstractSensor):
             else:
                 raw_frame_bytes.append(data)
 
-        return timestamp, np.array(b''.join(raw_frame_bytes))
+        raw_frame = b''.join(raw_frame_bytes)
+        if raw_frame[-1] == b'\n':
+            raw_frame = raw_frame[:-1]
+
+        return timestamp, np.array(raw_frame)
 
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
         raise NotImplementedError
@@ -123,11 +127,12 @@ class ArduinoAnalogSensor(SerialSensor):
         super().__init__(device, sliding_window_duration_seconds)
 
     def _interpret_raw_frame(self, raw_frame: np.ndarray) -> np.ndarray:
-        # interpreta i byte come se fossero stringhe
-        return np.array([100])
+        return np.array([
+            int(raw_frame.tobytes())
+        ])
 
     def init_visualization(self, ax):
-        ax.set_title('Arduino analog sensor')
+        ax.set_title(self.device.name)
         ax.set_xlim((0.0, self.window.seconds))
         ax.set_ylim((0, self.maxval))
 

@@ -6,8 +6,8 @@ import threading
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+import sensor
 from devscan import scan_for_devices
-from sensor import ArduinoAnalogSensor
 
 
 DEFAULT_WINDOW_SIZE_SECONDS = 10.0
@@ -41,12 +41,20 @@ def parse_window_parameters(default_window_size_seconds: float = DEFAULT_WINDOW_
     return args
 
 
+def sensor_factory(device_name: str):
+    if device_name == 'Arduino_analog':
+        return sensor.ArduinoAnalogSensor
+    else:
+        return None
+
+
 def run_asyncio(sensors, collection_tasks, sensor_ready_event: threading.Event, window_size_seconds):
     async def main(sensors, collection_tasks, sensor_ready_event, window_size_seconds):
-        # device discovery
+        print('Begin device discovery')
         available_devices = await scan_for_devices()
         for device in available_devices:
-            sensors.append(ArduinoAnalogSensor(device))
+            sensor_type = sensor_factory[device.name]
+            sensors.append(sensor_type(device))
         sensor_ready_event.set()
 
         if len(sensors) == 0:
