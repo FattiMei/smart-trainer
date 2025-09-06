@@ -161,6 +161,3 @@ if __name__ == '__main__':
     )
     plt.show()
     background_thread.join()
-
-    print(len(sensors[0].frames))
-    print(sensors[0].frames)

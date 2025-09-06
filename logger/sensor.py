@@ -25,6 +25,7 @@ class AbstractSensor:
 
 
 class SerialSensor(AbstractSensor):
+    INFO_MESSAGE  = b'INFO'
     START_MESSAGE = b'START'
     STOP_MESSAGE  = b'STOP'
     BEGIN_MESSAGE = b'BEGIN'

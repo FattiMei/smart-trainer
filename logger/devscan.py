@@ -5,8 +5,7 @@ import serial_asyncio
 from serial.tools import list_ports
 from dataclasses import dataclass
 
-
-INFO_MESSAGE = b'INFO\r\n'
+INFO_MESSAGE = b'INFO'
 
 
 @dataclass
