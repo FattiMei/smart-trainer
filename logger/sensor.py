@@ -208,13 +208,31 @@ class InfineonSensor(SerialSensor):
         )
 
     def init_visualization(self, ax):
-        pass
+        self.ax = ax
+        self.pcolormesh = ax.pcolormesh([[0]], [[0]], [[0]])
+        self.xbins = np.linspace(0, self.samples_per_chirp, num=self.samples_per_chirp)
 
     def update_visualization(self, t: float):
-        return None
+        if self.start_time is not None:
+            deltat = np.clip(
+                t - self.start_time - self.window.seconds,
+                0.0,
+                np.inf
+            )
+            self.ax.set_xlim((deltat, deltat + self.window.seconds))
+
+        return self.pcolormesh
 
     def update_visualization_data(self, data):
-        pass
+        try:
+            t = self.window.timeq
+            tt, xx = np.meshgrid(t, self.xbins)
+            c = np.abs(np.array(self.window.dataq)[:,0,0,:])
+
+            self.pcolormesh = self.ax.pcolormesh(tt, xx, c.T, shading='nearest')
+        except AttributeError:
+            # questa è una race condition
+            pass
 
 
 class SR250Sensor(SerialSensor):
