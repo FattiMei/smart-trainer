@@ -12,8 +12,6 @@ from devscan import scan_for_devices
 
 
 DEFAULT_WINDOW_SIZE_SECONDS = 10.0
-FPS = 30
-FRAME_TIME_SECONDS = 1 / FPS
 
 
 def parse_window_parameters(default_window_size_seconds: float = DEFAULT_WINDOW_SIZE_SECONDS):
@@ -131,6 +129,7 @@ if __name__ == '__main__':
         for sensor in sensors:
             print(f'  * {sensor.device.name} at {sensor.device.port}')
 
+    plt.ion()
     fig, axes = plt.subplots(len(sensors), 1)
 
     if len(sensors) > 1:
@@ -140,6 +139,7 @@ if __name__ == '__main__':
         sensors[0].init_visualization(axes)
 
     def update(frame):
+        print(frame)
         return [
             sensor.update_visualization(time.perf_counter())
             for sensor in sensors
@@ -151,13 +151,26 @@ if __name__ == '__main__':
             task.cancel()
 
     fig.canvas.mpl_connect("close_event", cancel_tasks)
-    ani = animation.FuncAnimation(
-        fig=fig,
-        func=update,
-        frames=int(window_parameters.window_size/FRAME_TIME_SECONDS),
-        interval=FRAME_TIME_SECONDS*1000,
-        cache_frame_data=False,
-        repeat=False
-    )
+
+    # faccio un loop manuale per rendere framerate independent la visualizzazione
+    t_old = time.perf_counter()
+    t_start = t_old
+    while True:
+        for sensor in sensors:
+            sensor.update_visualization(time.perf_counter())
+
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+
+        t_new = time.perf_counter()
+        delta = t_new - t_old
+
+        if delta < FRAME_TIME_SECONDS:
+            time.sleep(FRAME_TIME_SECONDS - delta)
+
+        if t_new - t_start > window_parameters.window_size:
+            break
+
+    plt.ioff()
     plt.show()
     background_thread.join()
