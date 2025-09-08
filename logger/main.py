@@ -174,3 +174,38 @@ if __name__ == '__main__':
     plt.ioff()
     plt.show()
     background_thread.join()
+
+    # salvare tutti i dati in un singolo file
+    sensor_map = {}
+    for sensor in sensors:
+        sensor_map[sensor.device.name] = sensor
+
+    blob = {}
+
+    if 'Arduino_heartbeat' in sensor_map:
+        blob['heartbeat'] = np.array(sensor_map['Arduino_heartbeat'].timestamps)
+
+    if 'Infineon_ESP32' in sensor_map:
+        sensor = sensor_map['Infineon_ESP32']
+
+        blob['t_infineon'] = np.array(sensor.timestamps)
+        blob['frame_infineon'] = np.array(sensor.frames)
+
+    if 'SR250_ESP32' in sensor_map:
+        sensor = sensor_map['SR250_ESP32']
+
+        blob['t_sr250'] = np.array(sensor.timestamps)
+        blob['frame_sr250'] = np.array(sensor.frames)
+
+    if 'Arduino_breath' in sensor_map:
+        blob['breath'] = np.array(sensor_map['Arduino_breath'].timestamps)
+
+    np.savez(
+        'out',
+        Arduino_heartbeat=blob['heartbeat'],
+        t_infineon=blob['t_infineon'],
+        frame_infineon=blob['frame_infineon'],
+        t_sr250=blob['t_sr250'],
+        frame_sr250=blob['frame_sr250'],
+        # breath=blob['breath']
+    )
