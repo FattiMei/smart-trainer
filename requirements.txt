@@ -1,15 +1,17 @@
-# requirements for logger functionality
-matplotlib==3.10.0
+# these are for the legacy logger
 numpy==2.2.1
 paho_mqtt==2.1.0
 pyftpdlib==2.0.0
 pyqtgraph==0.13.7
 sounddevice==0.5.1
+PyQt5
+matplotlib==3.10.0
+
+
+# this is for the updated logger
 pyserial
 pyserial-asyncio
-PyQt5
-vispy
 
-# requirements for analysis
+# this is for the analysis of data
 scipy
 scikit-learn
