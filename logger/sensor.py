@@ -252,7 +252,7 @@ class InfineonSensor(SerialSensor):
 
         return {
             f't_{name}': np.array(self.timestamps),
-            f'frames_{name}': np.array(self.timestamps)
+            f'frames_{name}': np.array(self.frames)
         }
 
 
@@ -313,5 +313,5 @@ class SR250Sensor(SerialSensor):
 
         return {
             f't_{name}': np.array(self.timestamps),
-            f'frames_{name}': np.array(self.timestamps)
+            f'frames_{name}': np.array(self.frames)
         }
