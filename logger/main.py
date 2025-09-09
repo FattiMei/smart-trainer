@@ -44,8 +44,8 @@ def sensor_factory(device_name: str):
     if device_name == 'Arduino_analog':
         return sensor.ArduinoAnalogSensor
 
-    elif device_name.startswith('Arduino_heartbeat'):
-        return sensor.ArduinoHeartbeatSensor
+    elif device_name.startswith('Arduino'):
+        return sensor.ArduinoEventSensor
 
     elif device_name == 'SR250_ESP32':
         return sensor.SR250Sensor
@@ -57,13 +57,13 @@ def sensor_factory(device_name: str):
         return None
 
 
-def run_asyncio(sensors, collection_tasks, sensor_ready_event: threading.Event, window_size_seconds):
+def run_asyncio(sensors: dict, collection_tasks, sensor_ready_event: threading.Event, window_size_seconds):
     async def main(sensors, collection_tasks, sensor_ready_event, window_size_seconds):
         print('Begin device discovery')
         available_devices = await scan_for_devices()
         for device in available_devices:
-            sensor_type = sensor_factory(device.name)
-            sensors.append(sensor_type(device))
+            name = device.name
+            sensors[name] = sensor_factory(name)(device)
         sensor_ready_event.set()
 
         if len(sensors) == 0:
@@ -72,7 +72,7 @@ def run_asyncio(sensors, collection_tasks, sensor_ready_event: threading.Event, 
         # TODO: è un problema quando collect prima di init_visualization
         start_time = time.perf_counter()
 
-        for sensor in sensors:
+        for sensor in sensors.values():
             collection_tasks.add(
                 asyncio.create_task(
                     sensor.collect(
@@ -100,7 +100,8 @@ if __name__ == '__main__':
     window_parameters = parse_window_parameters()
 
     # queste strutture condivise tra i due thread ci permettono di comunicare
-    sensors = []
+    sensors = {}
+    event_sensors = []
     collection_tasks = set()
     sensor_ready_event = threading.Event()
 
@@ -126,86 +127,72 @@ if __name__ == '__main__':
         exit()
     else:
         print('Devices found:')
-        for sensor in sensors:
-            print(f'  * {sensor.device.name} at {sensor.device.port}')
+        for name, sensor in sensors.items():
+            name = sensor.device.name
+            print(f'  * {name} at {sensor.device.port}')
 
-    plt.ion()
-    fig, axes = plt.subplots(len(sensors), 1)
+            if name.startswith('Arduino'):
+                event_sensors.append(sensor)
 
-    if len(sensors) > 1:
-        for i, ax in enumerate(axes):
-            sensors[i].init_visualization(ax)
-    else:
-        sensors[0].init_visualization(axes)
+    if len(event_sensors) > 0:
+        plt.ion()
+        fig, axes = plt.subplots(len(event_sensors), 1)
 
-    def update(frame):
-        print(frame)
-        return [
-            sensor.update_visualization(time.perf_counter())
-            for sensor in sensors
-        ]
+        if len(event_sensors) > 1:
+            for i, ax in enumerate(axes):
+                event_sensors[i].init_visualization(ax)
+        else:
+            event_sensors[0].init_visualization(axes)
 
-    def cancel_tasks(_):
-        print('Submit task cancellation from closing figure')
-        for task in collection_tasks:
-            task.cancel()
+        plt.tight_layout()
 
-    fig.canvas.mpl_connect("close_event", cancel_tasks)
+        def update(frame):
+            print(frame)
+            return [
+                sensor.update_visualization(time.perf_counter())
+                for sensor in event_sensors
+            ]
 
-    # faccio un loop manuale per rendere framerate independent la visualizzazione
-    t_old = time.perf_counter()
-    t_start = t_old
-    while True:
-        for sensor in sensors:
-            sensor.update_visualization(time.perf_counter())
+        def cancel_tasks(_):
+            print('Submit task cancellation from closing figure')
+            for task in collection_tasks:
+                task.cancel()
 
-        fig.canvas.draw()
-        fig.canvas.flush_events()
+        fig.canvas.mpl_connect("close_event", cancel_tasks)
 
-        t_new = time.perf_counter()
-        delta = t_new - t_old
+        # faccio un loop manuale per rendere framerate independent la visualizzazione
+        t_old = time.perf_counter()
+        t_start = t_old
+        while True:
+            for sensor in event_sensors:
+                sensor.update_visualization(time.perf_counter())
 
-        if delta < FRAME_TIME_SECONDS:
-            time.sleep(FRAME_TIME_SECONDS - delta)
+            fig.canvas.draw()
+            fig.canvas.flush_events()
 
-        if t_new - t_start > window_parameters.window_size:
-            break
+            t_new = time.perf_counter()
+            delta = t_new - t_old
+            t_old = t_new
 
-    plt.ioff()
-    plt.show()
+            if delta < FRAME_TIME_SECONDS:
+                time.sleep(FRAME_TIME_SECONDS - delta)
+
+            if t_new - t_start > window_parameters.window_size:
+                break
+
+        plt.ioff()
+        plt.show()
+
     background_thread.join()
 
-    # salvare tutti i dati in un singolo file
-    sensor_map = {}
-    for sensor in sensors:
-        sensor_map[sensor.device.name] = sensor
-
+    # non produciamo le finestre, ma teniamo il dato nella sua forma originale
+    # questo permette a utenti generici di fare le loro analisi senza la nostra
+    # impostazione
     blob = {}
+    for sensor in sensors.values():
+        blob.update(sensor.save())
 
-    if 'Arduino_heartbeat' in sensor_map:
-        blob['heartbeat'] = np.array(sensor_map['Arduino_heartbeat'].timestamps)
+    np.save('out.npy', blob)
 
-    if 'Infineon_ESP32' in sensor_map:
-        sensor = sensor_map['Infineon_ESP32']
-
-        blob['t_infineon'] = np.array(sensor.timestamps)
-        blob['frame_infineon'] = np.array(sensor.frames)
-
-    if 'SR250_ESP32' in sensor_map:
-        sensor = sensor_map['SR250_ESP32']
-
-        blob['t_sr250'] = np.array(sensor.timestamps)
-        blob['frame_sr250'] = np.array(sensor.frames)
-
-    if 'Arduino_breath' in sensor_map:
-        blob['breath'] = np.array(sensor_map['Arduino_breath'].timestamps)
-
-    np.savez(
-        'out',
-        Arduino_heartbeat=blob['heartbeat'],
-        t_infineon=blob['t_infineon'],
-        frame_infineon=blob['frame_infineon'],
-        t_sr250=blob['t_sr250'],
-        frame_sr250=blob['frame_sr250'],
-        # breath=blob['breath']
-    )
+    # così si va a leggere
+    # read_dictionary = np.load('my_file.npy',allow_pickle='TRUE').item()

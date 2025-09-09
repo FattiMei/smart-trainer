@@ -121,6 +121,9 @@ class SerialSensor(AbstractSensor):
     def update_visualization_data(self, data):
         raise NotImplementedError
 
+    def save(self) -> dict:
+        raise NotImplementedError
+
 
 class ArduinoAnalogSensor(SerialSensor):
     def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0, maxval: float = 1024.0):
@@ -152,12 +155,17 @@ class ArduinoAnalogSensor(SerialSensor):
         return self.line
 
     def update_visualization_data(self, data):
-        self.line.set_xdata(data[0])
-        self.line.set_ydata(data[1])
+        try:
+            self.line.set_xdata(data[0])
+            self.line.set_ydata(data[1])
+        except:
+            # questa è una data race: non si può aggiornare il dato
+            # senza prima avere impostato il plot
+            pass
 
 
 # per questo tipo di sensore voglio un grafico `plt.eventplot`
-class ArduinoHeartbeatSensor(SerialSensor):
+class ArduinoEventSensor(SerialSensor):
     def __init__(self, device: Device, sliding_window_duration_seconds: float = 3.0):
         super().__init__(device, sliding_window_duration_seconds)
 
@@ -167,7 +175,7 @@ class ArduinoHeartbeatSensor(SerialSensor):
         ])
 
     def init_visualization(self, ax):
-        ax.set_title('Heartbeat detection')
+        ax.set_title(f'Event detection {self.device.name}')
         self.eventplot, = ax.eventplot(
             [],
             orientation='horizontal',
@@ -189,6 +197,11 @@ class ArduinoHeartbeatSensor(SerialSensor):
 
     def update_visualization_data(self, data):
         self.eventplot.set_positions(list(data[0]))
+
+    def save(self) -> dict:
+        return {
+            f't_{self.device.name}': np.array(self.timestamps)
+        }
 
 
 class InfineonSensor(SerialSensor):
@@ -233,6 +246,14 @@ class InfineonSensor(SerialSensor):
         except AttributeError:
             # questa è una race condition
             pass
+
+    def save(self) -> dict:
+        name = self.device.name
+
+        return {
+            f't_{name}': np.array(self.timestamps),
+            f'frames_{name}': np.array(self.timestamps)
+        }
 
 
 class SR250Sensor(SerialSensor):
@@ -286,3 +307,11 @@ class SR250Sensor(SerialSensor):
         except AttributeError:
             # questa è una race condition
             pass
+
+    def save(self) -> dict:
+        name = self.device.name
+
+        return {
+            f't_{name}': np.array(self.timestamps),
+            f'frames_{name}': np.array(self.timestamps)
+        }
