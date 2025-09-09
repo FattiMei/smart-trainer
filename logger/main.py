@@ -40,6 +40,18 @@ def parse_window_parameters(default_window_size_seconds: float = DEFAULT_WINDOW_
     return args
 
 
+def get_collection_filename(args):
+    elements = (
+        args.group,
+        args.subject,
+        args.activity,
+        args.info,
+        time.strftime("%Y%m%d-%H%M%S")
+    )
+
+    return '_'.join(e for e in elements if e is not None)
+
+
 def sensor_factory(device_name: str):
     if device_name == 'Arduino_analog':
         return sensor.ArduinoAnalogSensor
@@ -98,6 +110,7 @@ FRAME_TIME_SECONDS = 1 / FPS
 
 if __name__ == '__main__':
     window_parameters = parse_window_parameters()
+    base_name = get_collection_filename(window_parameters)
 
     # queste strutture condivise tra i due thread ci permettono di comunicare
     sensors = {}
@@ -191,8 +204,7 @@ if __name__ == '__main__':
     blob = {}
     for sensor in sensors.values():
         blob.update(sensor.save())
-
-    np.save('out.npy', blob)
+    np.save(base_name + '.npy', blob)
 
     # così si va a leggere
     # read_dictionary = np.load('my_file.npy',allow_pickle='TRUE').item()

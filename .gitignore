@@ -2,4 +2,5 @@ datasets/
 venv/
 **/__pycache__
 *.zip
+*.npy
 *.npz
