@@ -27,7 +27,7 @@ void setup() {
 	Serial.begin(9600);
 	state = State::WAITING;
 
-	pinMode(TRIGGER_PIN, INPUT);
+	pinMode(TRIGGER_PIN, INPUT_PULLUP);
 	last_trigger_state = HIGH;
 	last_trigger_time = 0;
 }
